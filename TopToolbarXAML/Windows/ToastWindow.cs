@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Windowing;
+using Windows.Foundation;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -32,10 +33,14 @@ namespace TopToolbar
         private const uint SwpNoMove = 0x0002;
         private const uint SwpNoActivate = 0x0010;
         private const uint SwpShowWindow = 0x0040;
+        private const uint SwpFrameChanged = 0x0020;
 
         private readonly NotificationService _notificationService;
         private readonly Grid _root;
         private readonly StackPanel _toastStack;
+        private IntPtr _hwnd;
+        private IntPtr _oldWndProc;
+        private WndProcDelegate _newWndProc;
 
         private Brush _toastBackground = new SolidColorBrush(Color.FromArgb(0xEA, 0xFC, 0xF7, 0xF1));
         private Brush _toastBorder = new SolidColorBrush(Color.FromArgb(0x80, 0xFF, 0xFF, 0xFF));
@@ -50,6 +55,9 @@ namespace TopToolbar
         private bool _disposed;
         private string _lastAnchorSignature = string.Empty;
         private string _lastPlacementSignature = string.Empty;
+        private bool? _isClickThrough;
+
+        private delegate IntPtr WndProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
         public ToastWindow(NotificationService notificationService)
         {
@@ -84,6 +92,9 @@ namespace TopToolbar
 
             Activate();
             ConfigureAppWindowChrome();
+            ApplyFramelessStyles();
+            HookNativeInputPassthrough();
+            UpdateClickThroughMode(promptActive: false);
             AppWindow.Hide();
         }
 
@@ -177,6 +188,7 @@ namespace TopToolbar
 
             _disposed = true;
             _notificationService.Items.CollectionChanged -= OnNotificationCollectionChanged;
+            UnhookNativeInputPassthrough();
             try
             {
                 Close();
@@ -195,6 +207,7 @@ namespace TopToolbar
             _activePromptCount++;
             try
             {
+                UpdateClickThroughMode(promptActive: true);
                 UpdatePlacement();
                 AppLogger.LogInfo(
                     $"ToastWindow.Prompt: open requested. activePrompts={_activePromptCount}, anchor=({_anchorPosition.X},{_anchorPosition.Y},{_anchorSize.Width},{_anchorSize.Height}), anchorVisible={_anchorVisible}");
@@ -204,8 +217,26 @@ namespace TopToolbar
                     PlaceholderText = placeholder ?? string.Empty,
                     Text = initialValue ?? string.Empty,
                     HorizontalAlignment = HorizontalAlignment.Stretch,
-                    MinWidth = 240,
+                    MinWidth = 320,
+                    FontFamily = _textFontFamily,
+                    FontSize = 14,
+                    BorderThickness = new Thickness(1),
+                    Padding = new Thickness(12, 8, 12, 8),
                 };
+
+                var labelColor = ResolveBrushColor(_toastLabel, Color.FromArgb(0xFF, 0x2F, 0x3A, 0x3F));
+                var accentColor = ResolveBrushColor(_toastAccent, Color.FromArgb(0xFF, 0xD1, 0x34, 0x38));
+                var scrimColor = Color.FromArgb(0x68, 0x0D, 0x12, 0x17);
+                var subtleTextBrush = new SolidColorBrush(Color.FromArgb(0xD6, labelColor.R, labelColor.G, labelColor.B));
+                var inputBackgroundBrush = new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF));
+                var inputBorderBrush = new SolidColorBrush(Color.FromArgb(0x73, labelColor.R, labelColor.G, labelColor.B));
+                var secondaryButtonBackgroundBrush = new SolidColorBrush(Color.FromArgb(0x22, labelColor.R, labelColor.G, labelColor.B));
+                var secondaryButtonBorderBrush = new SolidColorBrush(Color.FromArgb(0x66, labelColor.R, labelColor.G, labelColor.B));
+                var primaryButtonBackgroundBrush = new SolidColorBrush(accentColor);
+
+                valueBox.Foreground = CloneBrush(_toastLabel) ?? new SolidColorBrush(labelColor);
+                valueBox.Background = inputBackgroundBrush;
+                valueBox.BorderBrush = inputBorderBrush;
 
                 var errorText = new TextBlock
                 {
@@ -213,6 +244,7 @@ namespace TopToolbar
                     Visibility = Visibility.Collapsed,
                     TextWrapping = TextWrapping.Wrap,
                     FontSize = 12,
+                    FontFamily = _textFontFamily,
                 };
 
                 var content = new StackPanel { Spacing = 10 };
@@ -222,9 +254,20 @@ namespace TopToolbar
                     {
                         Text = prompt.Trim(),
                         TextWrapping = TextWrapping.Wrap,
+                        Foreground = subtleTextBrush,
+                        FontFamily = _textFontFamily,
+                        FontSize = 13,
                     });
                 }
 
+                content.Children.Add(new TextBlock
+                {
+                    Text = "Workspace name",
+                    Foreground = CloneBrush(_toastLabel) ?? new SolidColorBrush(labelColor),
+                    FontFamily = _textFontFamily,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    FontSize = 13,
+                });
                 content.Children.Add(valueBox);
                 content.Children.Add(errorText);
 
@@ -256,7 +299,7 @@ namespace TopToolbar
                 {
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                     VerticalAlignment = VerticalAlignment.Stretch,
-                    Background = new SolidColorBrush(Color.FromArgb(0x50, 0x00, 0x00, 0x00)),
+                    Background = new SolidColorBrush(scrimColor),
                 };
                 if (rootWidth > 0 && rootHeight > 0)
                 {
@@ -268,25 +311,68 @@ namespace TopToolbar
                 {
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
-                    MinWidth = 340,
-                    MaxWidth = 520,
-                    Padding = new Thickness(16),
-                    CornerRadius = new CornerRadius(14),
+                    MinWidth = 420,
+                    MaxWidth = 640,
+                    Padding = new Thickness(18),
+                    CornerRadius = new CornerRadius(16),
                     BorderThickness = new Thickness(1),
                     Background = CloneBrush(_toastBackground) ?? new SolidColorBrush(Color.FromArgb(0xEA, 0xFC, 0xF7, 0xF1)),
                     BorderBrush = CloneBrush(_toastBorder) ?? new SolidColorBrush(Color.FromArgb(0x80, 0xFF, 0xFF, 0xFF)),
                 };
+                card.Shadow = new ThemeShadow();
+                card.Translation = new System.Numerics.Vector3(0, 0, 14);
 
-                var cardStack = new StackPanel { Spacing = 12 };
-                cardStack.Children.Add(new TextBlock
+                var headerPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 12,
+                };
+
+                var headerIcon = new Border
+                {
+                    Width = 34,
+                    Height = 34,
+                    CornerRadius = new CornerRadius(17),
+                    Background = new SolidColorBrush(Color.FromArgb(0xD9, accentColor.R, accentColor.G, accentColor.B)),
+                    Child = new FontIcon
+                    {
+                        Glyph = "\uE722",
+                        FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                        FontSize = 14,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+                    },
+                };
+                headerPanel.Children.Add(headerIcon);
+
+                var headingStack = new StackPanel
+                {
+                    Spacing = 2,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                headingStack.Children.Add(new TextBlock
                 {
                     Text = string.IsNullOrWhiteSpace(title) ? "Input required" : title.Trim(),
-                    FontSize = 18,
+                    FontSize = 20,
                     FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                    Foreground = _toastLabel,
+                    Foreground = CloneBrush(_toastLabel) ?? new SolidColorBrush(labelColor),
                     FontFamily = _textFontFamily,
                     TextWrapping = TextWrapping.Wrap,
                 });
+                headingStack.Children.Add(new TextBlock
+                {
+                    Text = "Save current desktop as a runtime workspace.",
+                    Foreground = subtleTextBrush,
+                    FontFamily = _textFontFamily,
+                    FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap,
+                });
+
+                headerPanel.Children.Add(headingStack);
+
+                var cardStack = new StackPanel { Spacing = 14 };
+                cardStack.Children.Add(headerPanel);
                 cardStack.Children.Add(content);
 
                 var actionRow = new StackPanel
@@ -298,15 +384,29 @@ namespace TopToolbar
 
                 var okButton = new Button
                 {
-                    Content = "OK",
-                    MinWidth = 86,
+                    Content = "Save snapshot",
+                    MinWidth = 136,
                     IsEnabled = !string.IsNullOrWhiteSpace(valueBox.Text),
+                    CornerRadius = new CornerRadius(10),
+                    Padding = new Thickness(14, 8, 14, 8),
+                    BorderThickness = new Thickness(0),
+                    Background = primaryButtonBackgroundBrush,
+                    Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+                    FontFamily = _textFontFamily,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 };
 
                 var cancelButton = new Button
                 {
                     Content = "Cancel",
-                    MinWidth = 86,
+                    MinWidth = 104,
+                    CornerRadius = new CornerRadius(10),
+                    Padding = new Thickness(14, 8, 14, 8),
+                    BorderThickness = new Thickness(1),
+                    Background = secondaryButtonBackgroundBrush,
+                    BorderBrush = secondaryButtonBorderBrush,
+                    Foreground = CloneBrush(_toastLabel) ?? new SolidColorBrush(labelColor),
+                    FontFamily = _textFontFamily,
                 };
 
                 actionRow.Children.Add(cancelButton);
@@ -329,7 +429,19 @@ namespace TopToolbar
                     }
                 };
 
-                okButton.Click += (_, __) =>
+                void CompleteWithValue(string value)
+                {
+                    if (Interlocked.Exchange(ref completionState, 1) != 0)
+                    {
+                        return;
+                    }
+
+                    okButton.IsEnabled = false;
+                    cancelButton.IsEnabled = false;
+                    resultSource.TrySetResult(value);
+                }
+
+                void ConfirmPrompt()
                 {
                     if (string.IsNullOrWhiteSpace(valueBox.Text))
                     {
@@ -339,29 +451,32 @@ namespace TopToolbar
                         return;
                     }
 
-                    if (Interlocked.Exchange(ref completionState, 1) != 0)
-                    {
-                        return;
-                    }
-
-                    okButton.IsEnabled = false;
-                    cancelButton.IsEnabled = false;
                     AppLogger.LogInfo($"ToastWindow.Prompt: OK clicked with value='{valueBox.Text.Trim()}'.");
-                    resultSource.TrySetResult(valueBox.Text.Trim());
-                };
+                    CompleteWithValue(valueBox.Text.Trim());
+                }
 
-                cancelButton.Click += (_, __) =>
+                void CancelPrompt()
                 {
-                    if (Interlocked.Exchange(ref completionState, 1) != 0)
-                    {
-                        return;
-                    }
-
-                    okButton.IsEnabled = false;
-                    cancelButton.IsEnabled = false;
                     AppLogger.LogInfo("ToastWindow.Prompt: Cancel clicked.");
-                    resultSource.TrySetResult(null);
+                    CompleteWithValue(null);
+                }
+
+                valueBox.KeyDown += (_, args) =>
+                {
+                    if (args.Key == Windows.System.VirtualKey.Enter && okButton.IsEnabled)
+                    {
+                        ConfirmPrompt();
+                        args.Handled = true;
+                    }
+                    else if (args.Key == Windows.System.VirtualKey.Escape)
+                    {
+                        CancelPrompt();
+                        args.Handled = true;
+                    }
                 };
+
+                okButton.Click += (_, __) => ConfirmPrompt();
+                cancelButton.Click += (_, __) => CancelPrompt();
 
                 card.Loaded += (_, __) =>
                 {
@@ -404,6 +519,7 @@ namespace TopToolbar
             {
                 _activePromptCount = Math.Max(0, _activePromptCount - 1);
                 AppLogger.LogInfo($"ToastWindow.Prompt: closed. activePrompts={_activePromptCount}");
+                UpdateClickThroughMode(promptActive: _activePromptCount > 0);
                 UpdatePlacement();
             }
         }
@@ -576,6 +692,59 @@ namespace TopToolbar
             }
         }
 
+        private void ApplyFramelessStyles()
+        {
+            var hwnd = this.GetWindowHandle();
+            if (hwnd == IntPtr.Zero)
+            {
+                return;
+            }
+
+            try
+            {
+                const int GwlStyle = -16;
+                const int GwlExStyle = -20;
+                const int WsCaption = 0x00C00000;
+                const int WsThickFrame = 0x00040000;
+                const int WsMinimizeBox = 0x00020000;
+                const int WsMaximizeBox = 0x00010000;
+                const int WsSysMenu = 0x00080000;
+                const int WsPopup = unchecked((int)0x80000000);
+                const int WsVisible = 0x10000000;
+                const int WsExToolWindow = 0x00000080;
+                const int WsExTopmost = 0x00000008;
+                const int WsExNoActivate = 0x08000000;
+
+                var style = GetWindowLong(hwnd, GwlStyle);
+                style &= ~(WsCaption | WsThickFrame | WsMinimizeBox | WsMaximizeBox | WsSysMenu);
+                style |= WsPopup | WsVisible;
+                _ = SetWindowLong(hwnd, GwlStyle, style);
+
+                var exStyle = GetWindowLong(hwnd, GwlExStyle);
+                exStyle |= WsExToolWindow | WsExTopmost | WsExNoActivate;
+                _ = SetWindowLong(hwnd, GwlExStyle, exStyle);
+
+                _ = SetWindowPos(
+                    hwnd,
+                    HwndTopMost,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SwpNoMove | SwpNoSize | SwpNoActivate | SwpShowWindow | SwpFrameChanged);
+
+                // Win11 can still draw a system border on overlapped windows.
+                // DWMWA_COLOR_NONE suppresses that frame border.
+                const int DwmwaBorderColor = 34;
+                uint dwmColorNone = 0xFFFFFFFE;
+                _ = DwmSetWindowAttribute(hwnd, DwmwaBorderColor, ref dwmColorNone, sizeof(uint));
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"ToastWindow: failed to apply frameless styles - {ex.Message}");
+            }
+        }
+
         private void UpdatePlacement()
         {
             if (_disposed)
@@ -592,6 +761,8 @@ namespace TopToolbar
 
             try
             {
+                UpdateClickThroughMode(promptActive: _activePromptCount > 0);
+
                 if (_disposed || AppWindow == null || _root.XamlRoot == null)
                 {
                     LogPlacement(
@@ -633,17 +804,27 @@ namespace TopToolbar
                     }
                 }
 
-                AppWindow.Move(new PointInt32(workArea.X, workArea.Y));
-                AppWindow.Resize(new SizeInt32(workArea.Width, workArea.Height));
-                _root.Width = workArea.Width / scale;
-                _root.Height = workArea.Height / scale;
+                _toastStack.Measure(new Size(maxToastWidth, Math.Max(120, workArea.Height / scale)));
+                var desired = _toastStack.DesiredSize;
+                var contentWidth = (int)Math.Ceiling(Math.Max(MinToastWidthPx, desired.Width));
+                var contentHeight = (int)Math.Ceiling(Math.Max(36, desired.Height));
+
+                var windowWidth = Math.Clamp(contentWidth + (EdgeMarginPx * 2), MinToastWidthPx + (EdgeMarginPx * 2), maxToastWidth + (EdgeMarginPx * 2));
+                var windowHeight = Math.Clamp(contentHeight + (EdgeMarginPx * 2), 72, workArea.Height);
+                var windowX = workArea.X + workArea.Width - windowWidth;
+                var windowY = workArea.Y + workArea.Height - windowHeight;
+
+                AppWindow.Move(new PointInt32(windowX, windowY));
+                AppWindow.Resize(new SizeInt32(windowWidth, windowHeight));
+                _root.Width = windowWidth / scale;
+                _root.Height = windowHeight / scale;
                 AppWindow.Show(false);
                 MakeTopMost();
                 var actualPos = AppWindow.Position;
                 var actualSize = AppWindow.Size;
                 LogPlacement(
                     "shown",
-                    $"x={workArea.X}, y={workArea.Y}, w={workArea.Width}, h={workArea.Height}, actual=({actualPos.X},{actualPos.Y},{actualSize.Width},{actualSize.Height}), mode=bottom-right, toastMaxW={maxToastWidth}, anchor=({_anchorPosition.X},{_anchorPosition.Y},{_anchorSize.Width},{_anchorSize.Height}), anchorVisible={_anchorVisible}, items={_notificationService.Items.Count}, prompts={_activePromptCount}, scale={scale:0.###}");
+                    $"x={windowX}, y={windowY}, w={windowWidth}, h={windowHeight}, actual=({actualPos.X},{actualPos.Y},{actualSize.Width},{actualSize.Height}), mode=bottom-right-windowed, toastMaxW={maxToastWidth}, desired=({desired.Width:0.##},{desired.Height:0.##}), anchor=({_anchorPosition.X},{_anchorPosition.Y},{_anchorSize.Width},{_anchorSize.Height}), anchorVisible={_anchorVisible}, items={_notificationService.Items.Count}, prompts={_activePromptCount}, scale={scale:0.###}");
             }
             catch (COMException ex)
             {
@@ -653,6 +834,116 @@ namespace TopToolbar
             {
                 AppLogger.LogWarning($"ToastWindow.UpdatePlacement: exception - {ex.Message}");
             }
+        }
+
+        private void UpdateClickThroughMode(bool promptActive)
+        {
+            // Toast mode should never block input to underlying windows.
+            // Prompt mode must receive input for buttons/textbox.
+            var shouldClickThrough = !promptActive;
+            if (_isClickThrough.HasValue && _isClickThrough.Value == shouldClickThrough)
+            {
+                return;
+            }
+
+            var hwnd = this.GetWindowHandle();
+            if (hwnd == IntPtr.Zero)
+            {
+                return;
+            }
+
+            const int GwlExStyle = -20;
+            const int WsExTransparent = 0x00000020;
+            const int WsExNoActivate = 0x08000000;
+            const int WsExToolWindow = 0x00000080;
+
+            try
+            {
+                var exStyle = GetWindowLong(hwnd, GwlExStyle);
+                exStyle |= WsExNoActivate | WsExToolWindow;
+                if (shouldClickThrough)
+                {
+                    exStyle |= WsExTransparent;
+                }
+                else
+                {
+                    exStyle &= ~WsExTransparent;
+                }
+
+                _ = SetWindowLong(hwnd, GwlExStyle, exStyle);
+                _isClickThrough = shouldClickThrough;
+                AppLogger.LogInfo($"ToastWindow.InputMode: clickThrough={shouldClickThrough}, promptActive={promptActive}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"ToastWindow.InputMode: failed to set click-through mode - {ex.Message}");
+            }
+        }
+
+        private void HookNativeInputPassthrough()
+        {
+            if (_oldWndProc != IntPtr.Zero)
+            {
+                return;
+            }
+
+            try
+            {
+                _hwnd = this.GetWindowHandle();
+                if (_hwnd == IntPtr.Zero)
+                {
+                    return;
+                }
+
+                _newWndProc = ToastWndProc;
+                _oldWndProc = SetWindowLongPtr(_hwnd, GwlWndProc, Marshal.GetFunctionPointerForDelegate(_newWndProc));
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"ToastWindow.InputMode: failed to hook wndproc - {ex.Message}");
+            }
+        }
+
+        private void UnhookNativeInputPassthrough()
+        {
+            if (_hwnd == IntPtr.Zero || _oldWndProc == IntPtr.Zero)
+            {
+                return;
+            }
+
+            try
+            {
+                _ = SetWindowLongPtr(_hwnd, GwlWndProc, _oldWndProc);
+            }
+            catch
+            {
+            }
+            finally
+            {
+                _oldWndProc = IntPtr.Zero;
+                _newWndProc = null;
+            }
+        }
+
+        private IntPtr ToastWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+        {
+            // Force toast window to be mouse transparent in non-prompt mode.
+            if (_activePromptCount == 0)
+            {
+                if (msg == WmNcHitTest)
+                {
+                    return new IntPtr(HtTransparent);
+                }
+
+                if (msg == WmMouseActivate)
+                {
+                    return new IntPtr(MaNoActivate);
+                }
+            }
+
+            return _oldWndProc != IntPtr.Zero
+                ? CallWindowProc(_oldWndProc, hWnd, msg, wParam, lParam)
+                : IntPtr.Zero;
         }
 
         private void LogPlacement(string phase, string details)
@@ -764,6 +1055,21 @@ namespace TopToolbar
             return null;
         }
 
+        private static Color ResolveBrushColor(Brush brush, Color fallback)
+        {
+            if (brush is SolidColorBrush solid)
+            {
+                return solid.Color;
+            }
+
+            if (brush is GradientBrush gradient && gradient.GradientStops != null && gradient.GradientStops.Count > 0)
+            {
+                return gradient.GradientStops[0].Color;
+            }
+
+            return fallback;
+        }
+
         private static async Task EnsureXamlRootAsync(FrameworkElement element)
         {
             if (element == null || element.XamlRoot != null)
@@ -798,5 +1104,26 @@ namespace TopToolbar
             int cx,
             int cy,
             uint uFlags);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr CallWindowProc(IntPtr lpPrevWndFunc, IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("dwmapi.dll", PreserveSig = true)]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref uint pvAttribute, int cbAttribute);
+
+        private const int GwlWndProc = -4;
+        private const uint WmNcHitTest = 0x0084;
+        private const uint WmMouseActivate = 0x0021;
+        private const int HtTransparent = -1;
+        private const int MaNoActivate = 3;
     }
 }
