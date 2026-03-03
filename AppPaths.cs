@@ -9,9 +9,10 @@ namespace TopToolbar;
 
 internal static class AppPaths
 {
-    private const string RootFolderName = "TopToolbar";
+    private const string StandaloneRootFolderName = "TopToolbar-Standalone";
+    private const string RootOverrideEnvironmentVariable = "TOPTOOLBAR_APPDATA_ROOT";
 
-    public static string Root => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), RootFolderName);
+    public static string Root => ResolveRootPath();
 
     public static string Logs => Path.Combine(Root, "Logs");
 
@@ -26,4 +27,17 @@ internal static class AppPaths
     public static string ProviderDefinitionsDirectory => Path.Combine(ConfigDirectory, "providers");
 
     public static string IconsDirectory => Path.Combine(Root, "icons");
+
+    private static string ResolveRootPath()
+    {
+        var overridePath = Environment.GetEnvironmentVariable(RootOverrideEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(overridePath))
+        {
+            return overridePath.Trim();
+        }
+
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            StandaloneRootFolderName);
+    }
 }

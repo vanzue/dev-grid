@@ -46,6 +46,10 @@ namespace TopToolbar.ViewModels
                         {
                             IsGeneralSelected = false;
                         }
+                        if (IsTemplatesSelected)
+                        {
+                            IsTemplatesSelected = false;
+                        }
 
                         if (SelectedGroup != null)
                         {
@@ -58,7 +62,7 @@ namespace TopToolbar.ViewModels
 
         public bool HasSelectedWorkspace => SelectedWorkspace != null;
 
-        public bool IsWorkspaceSelected => !IsGeneralSelected && SelectedWorkspace != null && SelectedGroup == null;
+        public bool IsWorkspaceSelected => !IsGeneralSelected && !IsTemplatesSelected && SelectedWorkspace != null && SelectedGroup == null;
 
         private void WorkspaceButtons_CollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
         {
@@ -111,46 +115,42 @@ namespace TopToolbar.ViewModels
                 .Where(ws => ws != null && !string.IsNullOrWhiteSpace(ws.Id))
                 .ToDictionary(ws => ws.Id.Trim(), ws => ws, StringComparer.OrdinalIgnoreCase);
 
-            var orderedButtons = (config.Buttons.Count > 0)
-                ? config.Buttons
-                    .Where(button => button != null)
-                    .OrderBy(button => button.SortOrder ?? double.MaxValue)
-                    .ThenBy(button => button.Name ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                    .ToList()
-                : definitionLookup.Values
-                    .Select(definition => new WorkspaceButtonConfig
-                    {
-                        Id = BuildWorkspaceButtonId(definition.Id),
-                        WorkspaceId = definition.Id,
-                        Name = string.IsNullOrWhiteSpace(definition.Name) ? definition.Id : definition.Name,
-                        Description = string.Empty,
-                        Enabled = true,
-                        Icon = new ProviderIcon { Type = ProviderIconType.Glyph, Glyph = "\uE7F4" },
-                    })
-                    .ToList();
+            var buttonLookup = (config.Buttons ?? new System.Collections.Generic.List<WorkspaceButtonConfig>())
+                .Where(button => button != null)
+                .Select(button => new
+                {
+                    Id = !string.IsNullOrWhiteSpace(button.WorkspaceId) ? button.WorkspaceId.Trim() : ExtractWorkspaceId(button.Id),
+                    Button = button,
+                })
+                .Where(entry => !string.IsNullOrWhiteSpace(entry.Id))
+                .GroupBy(entry => entry.Id, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First().Button, StringComparer.OrdinalIgnoreCase);
 
-            foreach (var buttonConfig in orderedButtons)
+            var allWorkspaceIds = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var id in definitionLookup.Keys)
             {
-                if (buttonConfig == null)
-                {
-                    continue;
-                }
+                allWorkspaceIds.Add(id);
+            }
 
-                var workspaceId = !string.IsNullOrWhiteSpace(buttonConfig.WorkspaceId)
-                    ? buttonConfig.WorkspaceId.Trim()
-                    : ExtractWorkspaceId(buttonConfig.Id);
+            foreach (var id in buttonLookup.Keys)
+            {
+                allWorkspaceIds.Add(id);
+            }
 
-                if (string.IsNullOrWhiteSpace(workspaceId))
-                {
-                    continue;
-                }
+            var orderedWorkspaceIds = allWorkspaceIds
+                .OrderBy(id => GetTemplateDisplayName(definitionLookup.TryGetValue(id, out var definition) ? definition : null), StringComparer.OrdinalIgnoreCase)
+                .ThenByDescending(id => definitionLookup.TryGetValue(id, out var definition) ? definition?.LastLaunchedTime ?? long.MinValue : long.MinValue)
+                .ThenBy(id => GetInstanceSortName(definitionLookup.TryGetValue(id, out var definition) ? definition : null, id), StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
+            foreach (var workspaceId in orderedWorkspaceIds)
+            {
                 if (!definitionLookup.TryGetValue(workspaceId, out var definition))
                 {
                     definition = new WorkspaceDefinition
                     {
                         Id = workspaceId,
-                        Name = buttonConfig.Name ?? workspaceId,
+                        Name = workspaceId,
                         CreationTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                         Applications = new System.Collections.Generic.List<ApplicationDefinition>(),
                         Monitors = new System.Collections.Generic.List<MonitorDefinition>(),
@@ -158,7 +158,29 @@ namespace TopToolbar.ViewModels
                     definitionLookup[workspaceId] = definition;
                 }
 
+                if (!buttonLookup.TryGetValue(workspaceId, out var buttonConfig))
+                {
+                    buttonConfig = new WorkspaceButtonConfig
+                    {
+                        Id = BuildWorkspaceButtonId(workspaceId),
+                        WorkspaceId = workspaceId,
+                        Name = GetWorkspaceDisplayTitle(definition, workspaceId),
+                        Description = string.Empty,
+                        Enabled = true,
+                        Icon = new ProviderIcon { Type = ProviderIconType.Glyph, Glyph = "\uE7F4" },
+                    };
+                }
+                else
+                {
+                    buttonConfig.WorkspaceId = workspaceId;
+                    if (string.IsNullOrWhiteSpace(buttonConfig.Name))
+                    {
+                        buttonConfig.Name = GetWorkspaceDisplayTitle(definition, workspaceId);
+                    }
+                }
+
                 var viewModel = new WorkspaceButtonViewModel(buttonConfig, definition);
+                viewModel.NotifyMetadataChanged();
                 WorkspaceButtons.Add(viewModel);
             }
 
@@ -184,16 +206,17 @@ namespace TopToolbar.ViewModels
 
             var definitions = new System.Collections.Generic.List<WorkspaceDefinition>();
 
-            foreach (var workspace in WorkspaceButtons)
+            for (var i = 0; i < WorkspaceButtons.Count; i++)
             {
+                var workspace = WorkspaceButtons[i];
                 var buttonConfig = new WorkspaceButtonConfig
                 {
                     Id = string.IsNullOrWhiteSpace(workspace.Config.Id) ? BuildWorkspaceButtonId(workspace.WorkspaceId) : workspace.Config.Id,
                     WorkspaceId = workspace.WorkspaceId,
-                    Name = workspace.Name ?? string.Empty,
+                    Name = workspace.DisplayTitle ?? string.Empty,
                     Description = workspace.Description ?? string.Empty,
                     Enabled = workspace.Enabled,
-                    SortOrder = workspace.Config.SortOrder,
+                    SortOrder = i + 1,
                     Icon = CloneIcon(workspace.Icon),
                 };
 
@@ -215,6 +238,27 @@ namespace TopToolbar.ViewModels
 
             await _workspaceDefinitionStore.SaveAllAsync(definitions, System.Threading.CancellationToken.None);
             await _workspaceConfigStore.SaveAsync(config);
+        }
+
+        public async Task RefreshWorkspacesAsync()
+        {
+            var workspaceConfig = await _workspaceConfigStore.LoadAsync();
+            var workspaceDefinitions = await _workspaceDefinitionStore.LoadAllAsync(System.Threading.CancellationToken.None);
+
+            void Apply()
+            {
+                _suppressWorkspaceSave = true;
+                try
+                {
+                    LoadWorkspaceButtons(workspaceConfig, workspaceDefinitions);
+                }
+                finally
+                {
+                    _suppressWorkspaceSave = false;
+                }
+            }
+
+            await RunOnUiThreadAsync(Apply).ConfigureAwait(false);
         }
 
         private void HookWorkspaceButton(WorkspaceButtonViewModel workspace)
@@ -318,38 +362,6 @@ namespace TopToolbar.ViewModels
             }
 
             ScheduleSave();
-        }
-
-        public WorkspaceButtonViewModel AddWorkspace(string name)
-        {
-            var id = Guid.NewGuid().ToString("N");
-            var displayName = string.IsNullOrWhiteSpace(name) ? "New workspace" : name.Trim();
-
-            var definition = new WorkspaceDefinition
-            {
-                Id = id,
-                Name = displayName,
-                CreationTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                Applications = new System.Collections.Generic.List<ApplicationDefinition>(),
-                Monitors = new System.Collections.Generic.List<MonitorDefinition>(),
-            };
-
-            var buttonConfig = new WorkspaceButtonConfig
-            {
-                Id = BuildWorkspaceButtonId(id),
-                WorkspaceId = id,
-                Name = displayName,
-                Description = string.Empty,
-                Enabled = true,
-                SortOrder = WorkspaceButtons.Count + 1,
-                Icon = new ProviderIcon { Type = ProviderIconType.Glyph, Glyph = "\uE7F4" },
-            };
-
-            var workspace = new WorkspaceButtonViewModel(buttonConfig, definition);
-            WorkspaceButtons.Add(workspace);
-            SelectedWorkspace = workspace;
-            ScheduleSave();
-            return workspace;
         }
 
         public ApplicationDefinition AddWorkspaceApp(WorkspaceButtonViewModel workspace)
@@ -516,6 +528,74 @@ namespace TopToolbar.ViewModels
             return buttonId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
                 ? buttonId.Substring(prefix.Length)
                 : buttonId;
+        }
+
+        private static string GetWorkspaceDisplayTitle(WorkspaceDefinition definition, string fallbackId)
+        {
+            if (!string.IsNullOrWhiteSpace(definition?.WorkspaceTitle))
+            {
+                return definition.WorkspaceTitle.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(definition?.Name))
+            {
+                return definition.Name.Trim();
+            }
+
+            return fallbackId ?? string.Empty;
+        }
+
+        private static string GetTemplateDisplayName(WorkspaceDefinition definition)
+        {
+            if (definition == null)
+            {
+                return "Workspace";
+            }
+
+            if (!string.IsNullOrWhiteSpace(definition.WorkspaceTitle) && !string.IsNullOrWhiteSpace(definition.InstanceName))
+            {
+                var suffix = " · " + definition.InstanceName.Trim();
+                if (definition.WorkspaceTitle.EndsWith(suffix, StringComparison.Ordinal))
+                {
+                    var prefix = definition.WorkspaceTitle[..^suffix.Length].Trim();
+                    if (!string.IsNullOrWhiteSpace(prefix))
+                    {
+                        return prefix;
+                    }
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(definition.TemplateName))
+            {
+                return definition.TemplateName.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(definition.Name))
+            {
+                return definition.Name.Trim();
+            }
+
+            return "Workspace";
+        }
+
+        private static string GetInstanceSortName(WorkspaceDefinition definition, string workspaceId)
+        {
+            if (!string.IsNullOrWhiteSpace(definition?.InstanceName))
+            {
+                return definition.InstanceName.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(definition?.WorkspaceTitle))
+            {
+                return definition.WorkspaceTitle.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(definition?.Name))
+            {
+                return definition.Name.Trim();
+            }
+
+            return workspaceId ?? string.Empty;
         }
     }
 }

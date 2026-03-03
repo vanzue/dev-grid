@@ -17,7 +17,7 @@ namespace TopToolbar.Services.Workspaces
         /// <summary>
         /// Phase 2: Resize a window to its target position
         /// </summary>
-        private async Task ResizeWindowAsync(
+        private async Task<bool> ResizeWindowAsync(
             IntPtr handle,
             ApplicationDefinition app,
             WindowPlacement targetPosition,
@@ -27,7 +27,7 @@ namespace TopToolbar.Services.Workspaces
         {
             if (handle == IntPtr.Zero || app == null)
             {
-                return;
+                return false;
             }
 
             // Yield immediately to ensure parallel execution
@@ -40,7 +40,7 @@ namespace TopToolbar.Services.Workspaces
             {
                 if (!EnsureWindowOnCurrentDesktop(handle, appLabel, "Resize"))
                 {
-                    return;
+                    return false;
                 }
 
                 if (NativeWindowHelper.IsWindowCloaked(handle))
@@ -83,6 +83,7 @@ namespace TopToolbar.Services.Workspaces
 
                 sw.Stop();
                 LogPerf($"WorkspaceRuntime: [{appLabel}] Resize - done in {sw.ElapsedMilliseconds} ms");
+                return true;
             }
             catch (OperationCanceledException)
             {
@@ -92,6 +93,7 @@ namespace TopToolbar.Services.Workspaces
             {
                 sw.Stop();
                 AppLogger.LogWarning($"WorkspaceRuntime: [{appLabel}] Resize failed in {sw.ElapsedMilliseconds} ms - {ex.Message}");
+                return false;
             }
         }
 
@@ -180,10 +182,11 @@ namespace TopToolbar.Services.Workspaces
             return processIds;
         }
 
-        private void MinimizeExtraneousWindows(
+        private int MinimizeExtraneousWindows(
             HashSet<IntPtr> workspaceHandles,
             HashSet<uint> workspaceProcessIds)
         {
+            var minimizedCount = 0;
             try
             {
                 var currentProcessId = (uint)Environment.ProcessId;
@@ -227,6 +230,7 @@ namespace TopToolbar.Services.Workspaces
                     }
 
                     NativeWindowHelper.MinimizeWindow(window.Handle);
+                    minimizedCount++;
                     LogPerf(
                         $"WorkspaceRuntime: Phase 3 - minimized extraneous window handle={window.Handle}, processId={window.ProcessId}, title='{window.Title}'");
                 }
@@ -237,6 +241,8 @@ namespace TopToolbar.Services.Workspaces
                     $"WorkspaceRuntime: failed to minimize extraneous windows - {ex.Message}"
                 );
             }
+
+            return minimizedCount;
         }
 
         private async Task MakeSureWindowArrangedAsync(

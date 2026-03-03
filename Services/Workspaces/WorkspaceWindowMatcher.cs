@@ -178,19 +178,21 @@ namespace TopToolbar.Services.Workspaces
             }
 
             var appFileName = NormalizeFileName(app.Path);
+            var windowFileName = window.ProcessFileName;
             return !string.IsNullOrWhiteSpace(appFileName)
-                && !string.IsNullOrWhiteSpace(window.ProcessFileName)
-                && string.Equals(window.ProcessFileName, appFileName, StringComparison.OrdinalIgnoreCase);
+                && !string.IsNullOrWhiteSpace(windowFileName)
+                && AreProcessNamesEquivalent(
+                    NormalizeProcessName(windowFileName),
+                    NormalizeProcessName(appFileName));
         }
 
         private static bool MatchesProcessName(WindowInfo window, ApplicationDefinition app)
         {
             return !string.IsNullOrWhiteSpace(app.Name)
                 && !string.IsNullOrWhiteSpace(window.ProcessName)
-                && string.Equals(
+                && AreProcessNamesEquivalent(
                     NormalizeProcessName(window.ProcessName),
-                    NormalizeProcessName(app.Name),
-                    StringComparison.OrdinalIgnoreCase);
+                    NormalizeProcessName(app.Name));
         }
 
         private static bool MatchesTitle(WindowInfo window, ApplicationDefinition app)
@@ -305,6 +307,29 @@ namespace TopToolbar.Services.Workspaces
             }
 
             return trimmed;
+        }
+
+        private static bool AreProcessNamesEquivalent(string left, string right)
+        {
+            if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+            {
+                return false;
+            }
+
+            if (string.Equals(left, right, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return IsAliasPair(left, right);
+        }
+
+        private static bool IsAliasPair(string left, string right)
+        {
+            return (string.Equals(left, "wt", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(right, "windowsterminal", StringComparison.OrdinalIgnoreCase))
+                || (string.Equals(right, "wt", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(left, "windowsterminal", StringComparison.OrdinalIgnoreCase));
         }
 
         private static string NormalizePath(string path)

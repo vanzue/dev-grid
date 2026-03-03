@@ -14,6 +14,7 @@ namespace TopToolbar.Services.Workspaces
     {
         private const string WorkspaceProviderFileName = "WorkspaceProvider.json";
         private const string WorkspaceDefinitionsFileName = "workspaces.json";
+        private const string TemplatesDirectoryName = "templates";
 
         internal static string GetProviderConfigPath()
         {
@@ -43,6 +44,25 @@ namespace TopToolbar.Services.Workspaces
             }
 
             return Path.Combine(AppPaths.ConfigDirectory, WorkspaceDefinitionsFileName);
+        }
+
+        internal static string GetTemplatesDirectoryPath()
+        {
+            return Path.Combine(AppPaths.ConfigDirectory, TemplatesDirectoryName);
+        }
+
+        internal static string GetTemplateFilePath(string templateName, string templatesDirectoryPath = null)
+        {
+            var normalizedName = NormalizeTemplateName(templateName);
+            var directory = string.IsNullOrWhiteSpace(templatesDirectoryPath)
+                ? GetTemplatesDirectoryPath()
+                : templatesDirectoryPath;
+            return Path.Combine(directory, $"{normalizedName}.json");
+        }
+
+        internal static string NormalizeTemplateName(string templateName)
+        {
+            return (templateName ?? string.Empty).Trim().ToLowerInvariant();
         }
 
         internal static string GetLegacyPowerToysPath()

@@ -33,7 +33,6 @@ namespace TopToolbar.Providers
             DisposeProviders();
 
             LoadWorkspaceProvider();
-            LoadSystemControlsProvider();
         }
 
         /// <summary>
@@ -80,30 +79,6 @@ namespace TopToolbar.Providers
                 try
                 {
                     AppLogger.LogWarning($"BuiltinProvider: Failed to load workspace provider: {ex.Message}");
-                }
-                catch
-                {
-                    // Ignore logging errors
-                }
-            }
-        }
-
-        /// <summary>
-        /// Loads the system controls provider.
-        /// </summary>
-        private void LoadSystemControlsProvider()
-        {
-            try
-            {
-                var systemControlsProvider = new SystemControlsProvider();
-                _providers.Add(systemControlsProvider);
-                _disposables.Add(systemControlsProvider);
-            }
-            catch (Exception ex)
-            {
-                try
-                {
-                    AppLogger.LogWarning($"BuiltinProvider: Failed to load system controls provider: {ex.Message}");
                 }
                 catch
                 {

@@ -52,6 +52,15 @@ namespace TopToolbar.Services.Workspaces
             }
         }
 
+        private string _role = string.Empty;
+
+        [JsonPropertyName("role")]
+        public string Role
+        {
+            get => _role;
+            set => SetProperty(ref _role, value ?? string.Empty);
+        }
+
         private string _title = string.Empty;
 
         [JsonPropertyName("title")]

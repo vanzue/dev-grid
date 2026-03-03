@@ -125,7 +125,7 @@ namespace TopToolbar
                 }
             };
 
-            Title = "Top Toolbar";
+            Title = "Workspace Center";
 
             // Make window background completely transparent
             this.SystemBackdrop = new WinUIEx.TransparentTintBackdrop(
@@ -148,6 +148,7 @@ namespace TopToolbar
                 await _vm.LoadAsync(this.DispatcherQueue);
                 await RunOnUiThreadAsync(SyncStaticGroupsIntoStore);
                 await RefreshDynamicProviderGroupsAsync(CancellationToken.None);
+                await EnsureQuickTemplatesLoadedAsync(forceReload: true);
 
                 await RunOnUiThreadAsync(() =>
                 {
@@ -292,6 +293,12 @@ namespace TopToolbar
 
                 _settingsViewModelPropertyChangedHandler = null;
                 _settingsWindow = null;
+
+                _ = DispatcherQueue?.TryEnqueue(async () =>
+                {
+                    await RefreshDynamicProviderGroupsAsync(CancellationToken.None);
+                    await EnsureQuickTemplatesLoadedAsync(forceReload: true);
+                });
             };
             _settingsWindow.Activate();
         }

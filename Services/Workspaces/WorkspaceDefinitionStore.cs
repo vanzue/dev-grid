@@ -95,14 +95,7 @@ namespace TopToolbar.Services.Workspaces
                 var document = snapshot.Document;
                 document.Workspaces ??= new List<WorkspaceDefinition>();
 
-                document.Workspaces.RemoveAll(ws =>
-                    string.Equals(ws.Id, workspace.Id, StringComparison.OrdinalIgnoreCase)
-                    || (
-                        !string.IsNullOrWhiteSpace(ws.Name)
-                        && !string.IsNullOrWhiteSpace(workspace.Name)
-                        && string.Equals(ws.Name, workspace.Name, StringComparison.OrdinalIgnoreCase)
-                    )
-                );
+                document.Workspaces.RemoveAll(ws => IsSameLogicalWorkspace(ws, workspace));
 
                 document.Workspaces.Insert(0, workspace);
 
@@ -483,6 +476,32 @@ namespace TopToolbar.Services.Workspaces
 
             var json = JsonSerializer.Serialize(workspace, DefaultJsonContext.Default.WorkspaceDefinition);
             return JsonSerializer.Deserialize(json, DefaultJsonContext.Default.WorkspaceDefinition);
+        }
+
+        private static bool IsSameLogicalWorkspace(WorkspaceDefinition existing, WorkspaceDefinition incoming)
+        {
+            if (existing == null || incoming == null)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(existing.Id)
+                && !string.IsNullOrWhiteSpace(incoming.Id)
+                && string.Equals(existing.Id, incoming.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(existing.TemplateName)
+                && !string.IsNullOrWhiteSpace(incoming.TemplateName)
+                && !string.IsNullOrWhiteSpace(existing.InstanceName)
+                && !string.IsNullOrWhiteSpace(incoming.InstanceName))
+            {
+                return string.Equals(existing.TemplateName, incoming.TemplateName, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(existing.InstanceName, incoming.InstanceName, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
         }
     }
 }

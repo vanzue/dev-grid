@@ -37,6 +37,12 @@ namespace TopToolbar.ViewModels
                         // Deselect General when a group is selected
                         _isGeneralSelected = false;
                         OnPropertyChanged(nameof(IsGeneralSelected));
+                        if (_isTemplatesSelected)
+                        {
+                            _isTemplatesSelected = false;
+                            OnPropertyChanged(nameof(IsTemplatesSelected));
+                        }
+
                         if (SelectedWorkspace != null)
                         {
                             SelectedWorkspace = null;
@@ -72,6 +78,7 @@ namespace TopToolbar.ViewModels
         public bool HasSelectedButton => SelectedButton != null;
 
         private bool _isGeneralSelected = true;
+        private bool _isTemplatesSelected;
 
         public bool IsGeneralSelected
         {
@@ -82,6 +89,12 @@ namespace TopToolbar.ViewModels
                 {
                     _isGeneralSelected = value;
                     OnPropertyChanged(nameof(IsGeneralSelected));
+                    if (value && _isTemplatesSelected)
+                    {
+                        _isTemplatesSelected = false;
+                        OnPropertyChanged(nameof(IsTemplatesSelected));
+                    }
+
                     OnPropertyChanged(nameof(IsGroupSelected));
                     OnPropertyChanged(nameof(IsWorkspaceSelected));
                     OnPropertyChanged(nameof(IsUserGroupSelected));
@@ -98,7 +111,37 @@ namespace TopToolbar.ViewModels
             }
         }
 
-        public bool IsGroupSelected => !IsGeneralSelected && SelectedGroup != null;
+        public bool IsTemplatesSelected
+        {
+            get => _isTemplatesSelected;
+            set
+            {
+                if (_isTemplatesSelected != value)
+                {
+                    _isTemplatesSelected = value;
+                    OnPropertyChanged(nameof(IsTemplatesSelected));
+                    if (value && _isGeneralSelected)
+                    {
+                        _isGeneralSelected = false;
+                        OnPropertyChanged(nameof(IsGeneralSelected));
+                    }
+
+                    OnPropertyChanged(nameof(IsGroupSelected));
+                    OnPropertyChanged(nameof(IsWorkspaceSelected));
+                    OnPropertyChanged(nameof(IsUserGroupSelected));
+                    OnPropertyChanged(nameof(IsDefaultActionsGroupSelected));
+                    OnPropertyChanged(nameof(CanRemoveSelectedGroup));
+                    OnPropertyChanged(nameof(CanAddButtonToSelectedGroup));
+                    if (value)
+                    {
+                        SelectedGroup = null;
+                        SelectedWorkspace = null;
+                    }
+                }
+            }
+        }
+
+        public bool IsGroupSelected => !IsGeneralSelected && !IsTemplatesSelected && SelectedGroup != null;
 
         public bool IsUserGroupSelected => IsGroupSelected && !IsLockedDefaultGroup(SelectedGroup);
 

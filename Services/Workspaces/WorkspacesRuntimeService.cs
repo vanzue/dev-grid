@@ -65,7 +65,16 @@ namespace TopToolbar.Services.Workspaces
             return _snapshotter.SnapshotAsync(workspaceName, cancellationToken);
         }
 
-        public Task<bool> LaunchWorkspaceAsync(
+        public async Task<bool> LaunchWorkspaceAsync(
+            string workspaceId,
+            CancellationToken cancellationToken)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, nameof(WorkspacesRuntimeService));
+            var result = await _launcher.LaunchWorkspaceAsync(workspaceId, cancellationToken).ConfigureAwait(false);
+            return result != null && result.Ok;
+        }
+
+        public Task<WorkspaceSwitchDiagnostics> LaunchWorkspaceDetailedAsync(
             string workspaceId,
             CancellationToken cancellationToken)
         {

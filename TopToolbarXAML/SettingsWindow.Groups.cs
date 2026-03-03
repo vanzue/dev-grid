@@ -72,6 +72,13 @@ namespace TopToolbar
             WorkspacesList.SelectedItem = null;
         }
 
+        private void OnTemplatesItemTapped(object sender, TappedRoutedEventArgs e)
+        {
+            _vm.IsTemplatesSelected = true;
+            GroupsList.SelectedItem = null;
+            WorkspacesList.SelectedItem = null;
+        }
+
         // Rename handlers for groups list
         private async void OnStartRenameGroup(object sender, RoutedEventArgs e)
         {

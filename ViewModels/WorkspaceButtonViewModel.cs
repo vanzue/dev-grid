@@ -5,6 +5,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Globalization;
 using System.Linq;
 using TopToolbar.Models;
 using TopToolbar.Models.Providers;
@@ -34,6 +35,51 @@ namespace TopToolbar.ViewModels
 
         public string WorkspaceId => Definition.Id;
 
+        public string DisplayTitle =>
+            !string.IsNullOrWhiteSpace(Definition.WorkspaceTitle)
+                ? Definition.WorkspaceTitle
+                : (!string.IsNullOrWhiteSpace(Name) ? Name : WorkspaceId);
+
+        public string TemplateName =>
+            string.IsNullOrWhiteSpace(Definition.TemplateName) ? "-" : Definition.TemplateName;
+
+        public string InstanceName =>
+            string.IsNullOrWhiteSpace(Definition.InstanceName) ? "-" : Definition.InstanceName;
+
+        public string WorkspaceTitle =>
+            string.IsNullOrWhiteSpace(Definition.WorkspaceTitle) ? DisplayTitle : Definition.WorkspaceTitle;
+
+        public string RepoRoot =>
+            string.IsNullOrWhiteSpace(Definition.RepoRoot) ? "-" : Definition.RepoRoot;
+
+        public string FocusPriorityDisplay =>
+            Definition.FocusPriority == null || Definition.FocusPriority.Count == 0
+                ? "-"
+                : string.Join(", ", Definition.FocusPriority.Where(role => !string.IsNullOrWhiteSpace(role)));
+
+        public string LastLaunchedDisplay
+        {
+            get
+            {
+                if (!Definition.LastLaunchedTime.HasValue || Definition.LastLaunchedTime.Value <= 0)
+                {
+                    return "Never";
+                }
+
+                try
+                {
+                    return DateTimeOffset
+                        .FromUnixTimeSeconds(Definition.LastLaunchedTime.Value)
+                        .ToLocalTime()
+                        .ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+                }
+                catch
+                {
+                    return "Never";
+                }
+            }
+        }
+
         public string Name
         {
             get => Config.Name;
@@ -44,10 +90,17 @@ namespace TopToolbar.ViewModels
                     Config.Name = value ?? string.Empty;
                     if (!string.IsNullOrWhiteSpace(value))
                     {
-                        Definition.Name = value.Trim();
+                        var trimmed = value.Trim();
+                        Definition.Name = trimmed;
+                        if (!string.IsNullOrWhiteSpace(Definition.WorkspaceTitle) || !string.IsNullOrWhiteSpace(Definition.TemplateName))
+                        {
+                            Definition.WorkspaceTitle = trimmed;
+                        }
                     }
 
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(DisplayTitle));
+                    OnPropertyChanged(nameof(WorkspaceTitle));
                 }
             }
         }
@@ -214,6 +267,17 @@ namespace TopToolbar.ViewModels
             OnPropertyChanged(nameof(IconImagePath));
             OnPropertyChanged(nameof(IsGlyphIcon));
             OnPropertyChanged(nameof(IsImageIcon));
+        }
+
+        public void NotifyMetadataChanged()
+        {
+            OnPropertyChanged(nameof(DisplayTitle));
+            OnPropertyChanged(nameof(TemplateName));
+            OnPropertyChanged(nameof(InstanceName));
+            OnPropertyChanged(nameof(WorkspaceTitle));
+            OnPropertyChanged(nameof(RepoRoot));
+            OnPropertyChanged(nameof(FocusPriorityDisplay));
+            OnPropertyChanged(nameof(LastLaunchedDisplay));
         }
     }
 }

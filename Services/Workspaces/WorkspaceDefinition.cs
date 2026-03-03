@@ -15,6 +15,21 @@ namespace TopToolbar.Services.Workspaces
         [JsonPropertyName("name")]
         public string Name { get; set; } = string.Empty;
 
+        [JsonPropertyName("template-name")]
+        public string TemplateName { get; set; } = string.Empty;
+
+        [JsonPropertyName("instance-name")]
+        public string InstanceName { get; set; } = string.Empty;
+
+        [JsonPropertyName("workspace-title")]
+        public string WorkspaceTitle { get; set; } = string.Empty;
+
+        [JsonPropertyName("repo-root")]
+        public string RepoRoot { get; set; } = string.Empty;
+
+        [JsonPropertyName("focus-priority")]
+        public List<string> FocusPriority { get; set; } = new();
+
         [JsonPropertyName("creation-time")]
         public long CreationTime { get; set; }
 

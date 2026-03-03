@@ -28,7 +28,9 @@ namespace TopToolbar.Services.Windowing
         private readonly Dictionary<IntPtr, WindowInfo> _windows = new();
         private readonly List<IntPtr> _hookHandles = new();
         private readonly object _gate = new();
-        private readonly WinEventDelegate _winEventCallback;
+        private static readonly object HookOwnerGate = new();
+        private static readonly Dictionary<IntPtr, WindowManager> HookOwners = new();
+        private static readonly WinEventDelegate WinEventCallback = OnWinEventStatic;
         private readonly DisplayManager _displayManager;
         private bool _disposed;
 
@@ -44,7 +46,6 @@ namespace TopToolbar.Services.Windowing
         public WindowManager(DisplayManager displayManager = null)
         {
             _displayManager = displayManager;
-            _winEventCallback = OnWinEvent;
             RefreshAllWindows();
             StartListening();
 
@@ -169,19 +170,29 @@ namespace TopToolbar.Services.Windowing
                 _displayManager.MonitorsChanged -= OnMonitorsChanged;
             }
 
+            List<IntPtr> handles;
             lock (_gate)
             {
-                foreach (var handle in _hookHandles)
-                {
-                    if (handle != IntPtr.Zero)
-                    {
-                        _ = UnhookWinEvent(handle);
-                    }
-                }
-
+                handles = new List<IntPtr>(_hookHandles);
                 _hookHandles.Clear();
                 _windows.Clear();
                 _disposed = true;
+            }
+
+            lock (HookOwnerGate)
+            {
+                foreach (var handle in handles)
+                {
+                    HookOwners.Remove(handle);
+                }
+            }
+
+            foreach (var handle in handles)
+            {
+                if (handle != IntPtr.Zero)
+                {
+                    _ = UnhookWinEvent(handle);
+                }
             }
 
             GC.SuppressFinalize(this);
@@ -204,7 +215,7 @@ namespace TopToolbar.Services.Windowing
                 eventType,
                 eventType,
                 IntPtr.Zero,
-                _winEventCallback,
+                WinEventCallback,
                 0,
                 0,
                 EventFlagOutOfContext | EventFlagSkipOwnProcess
@@ -212,7 +223,36 @@ namespace TopToolbar.Services.Windowing
             if (handle != IntPtr.Zero)
             {
                 _hookHandles.Add(handle);
+                lock (HookOwnerGate)
+                {
+                    HookOwners[handle] = this;
+                }
             }
+        }
+
+        private static void OnWinEventStatic(
+            IntPtr hWinEventHook,
+            uint eventType,
+            IntPtr hwnd,
+            int idObject,
+            int idChild,
+            uint dwEventThread,
+            uint dwmsEventTime)
+        {
+            WindowManager owner = null;
+            lock (HookOwnerGate)
+            {
+                HookOwners.TryGetValue(hWinEventHook, out owner);
+            }
+
+            owner?.OnWinEvent(
+                hWinEventHook,
+                eventType,
+                hwnd,
+                idObject,
+                idChild,
+                dwEventThread,
+                dwmsEventTime);
         }
 
         private void RefreshAllWindows()

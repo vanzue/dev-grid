@@ -196,17 +196,20 @@
                             Width="{x:Bind local:ToolbarMetrics.ButtonContainerWidth}"
                             Margin="2">
                             <Button
+                                x:Name="NewWorkspaceButton"
                                 Style="{StaticResource ToolbarIconButtonStyle}"
+                                IsEnabled="False"
                                 Click="OnSnapshotClick"
-                                ToolTipService.ToolTip="Snapshot workspace">
+                                ToolTipService.ToolTip="Create workspace from template">
                                 <FontIcon
-                                    Glyph="&#xE114;"
+                                    Glyph="&#xE710;"
                                     FontFamily="Segoe MDL2 Assets"
                                     FontSize="{x:Bind local:ToolbarMetrics.ToolbarIconFontSize}"
                                     Foreground="{ThemeResource ToolbarIconBrush}" />
                             </Button>
                             <TextBlock
-                                Text="Snapshot"
+                                x:Name="NewWorkspaceLabel"
+                                Text="New Workspace"
                                 FontSize="{x:Bind local:ToolbarMetrics.ToolbarLabelFontSize}"
                                 FontFamily="{ThemeResource ToolbarTextFontFamily}"
                                 Foreground="{ThemeResource ToolbarLabelBrush}"

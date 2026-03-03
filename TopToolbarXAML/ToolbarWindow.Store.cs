@@ -21,13 +21,11 @@ namespace TopToolbar
         private static readonly string[] PreferredGroupProviderOrder =
         {
             "WorkspaceProvider",
-            "SystemControlsProvider",
         };
 
         private static readonly string[] PreferredDynamicGroupOrder =
         {
             "workspaces",
-            "system-controls",
         };
 
         private void RegisterProviders()
@@ -118,28 +116,7 @@ namespace TopToolbar
         // Sync static (config) groups into the central store so subsequent dynamic rebuilds retain them.
         private void SyncStaticGroupsIntoStore()
         {
-            try
-            {
-                foreach (var g in _vm.Groups)
-                {
-                    if (g == null)
-                    {
-                        continue;
-                    }
-
-                    // Provider-backed groups are refreshed separately.
-                    if (IsDynamicGroupId(g.Id))
-                    {
-                        continue;
-                    }
-
-                    // Upsert static group into store (reuse provider upsert since it is id-based)
-                    _store.UpsertProviderGroup(g);
-                }
-            }
-            catch
-            {
-            }
+            // Workspace-center mode intentionally excludes legacy static groups.
         }
 
         private static bool IsDynamicGroupId(string groupId)
@@ -149,8 +126,7 @@ namespace TopToolbar
                 return false;
             }
 
-            return string.Equals(groupId, "workspaces", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(groupId, "system-controls", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(groupId, "workspaces", StringComparison.OrdinalIgnoreCase);
         }
 
         private static int GetProviderOrder(string providerId)

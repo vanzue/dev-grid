@@ -1,0 +1,281 @@
+Workspace Orchestrator — Spec v0.2
+
+(Template-Centric Architecture)
+
+1. Core Principle
+
+Workspace ≠ Window Group
+Workspace = Named Instance of a Template
+
+Template is first-class.
+
+2. Why Template Is Critical
+
+Your real use case:
+
+Same repo, multiple parallel lines of work.
+
+Examples:
+
+PowerToys – Fix FancyZones bug
+
+PowerToys – Review PR #45773
+
+PowerToys – Work on Command Palette
+
+PowerToys – Release 0.98 prep
+
+All same repo.
+If no template + no explicit name → impossible to distinguish.
+
+Therefore:
+
+Template defines structure.
+
+Instance name defines intent.
+
+3. CLI Redesign (Template-First)
+3.1 Create Workspace
+
+New syntax:
+
+ws new --template <templateName> --name "<workspaceName>"
+
+Optional:
+
+--repo <path>   (if template doesn't hardcode repo)
+
+Example:
+
+ws new --template powertoys --name "FancyZones crash fix"
+3.2 Why --name Is Required
+
+--name must be mandatory.
+
+Reason:
+
+Switching relies on semantic identity.
+
+User must be able to say:
+
+"Switch to FancyZones fix"
+
+Not "Switch to ws-004"
+
+If no name is provided → CLI errors:
+
+Workspace name is required.
+4. Template Definition (Very Important)
+
+Templates define:
+
+Repo root (optional or required)
+
+Windows to spawn
+
+Default layout
+
+Default tools
+
+Optional commands
+
+Tracking rules
+
+4.1 Example: powertoys Template
+{
+  "name": "powertoys",
+  "repoRoot": "D:\\src\\PowerToys",
+  "windows": [
+    {
+      "role": "terminal",
+      "command": "cmd.exe",
+      "init": "cd D:\\src\\PowerToys"
+    },
+    {
+      "role": "vscode",
+      "command": "code",
+      "args": ["D:\\src\\PowerToys"]
+    }
+  ],
+  "layout": "side-by-side"
+}
+
+Behavior:
+
+When user runs:
+
+ws new --template powertoys --name "Command Palette refactor"
+
+System:
+
+Opens new terminal → cd to PowerToys
+
+Opens VSCode workspace at PowerToys
+
+Arranges them
+
+Registers both windows
+
+Creates workspace instance with title:
+
+PowerToys · Command Palette refactor
+5. Workspace Identity Model
+
+Each workspace has:
+
+templateName
+
+instanceName (user provided)
+
+repo
+
+windows[]
+
+layout
+
+createdAt
+
+active flag
+
+Example:
+
+{
+  "id": "ws-007",
+  "template": "powertoys",
+  "name": "FancyZones crash fix",
+  "title": "PowerToys · FancyZones crash fix",
+  "repo": "D:\\src\\PowerToys"
+}
+6. Toolbar UX (Now Template-Aware)
+
+TopToolbar should show:
+
+PowerToys · FancyZones crash fix
+PowerToys · Command Palette refactor
+PowerToys · Review PR #45773
+
+Grouped optionally by template:
+
+PowerToys
+   ├─ FancyZones crash fix
+   ├─ Command Palette refactor
+   └─ Review PR #45773
+
+This makes same-repo multi-line work intuitive.
+
+7. Switching UX (No CLI Required)
+
+Switch via toolbar click.
+
+Switch must:
+
+Bring all windows of workspace to front
+
+Restore layout
+
+Focus VSCode if present, else terminal
+
+No need to return to CLI window.
+
+CLI window becomes irrelevant after creation.
+
+8. Template System Specification
+8.1 Storage
+
+Templates stored as:
+
+%AppData%\WorkspaceOrchestrator\templates\
+
+Each template = JSON file.
+
+8.2 Template Commands
+
+List templates:
+
+ws templates
+
+Show template:
+
+ws templates show powertoys
+8.3 Extensibility
+
+Future templates:
+
+review
+
+release
+
+bugfix
+
+new-feature
+
+triage
+
+documentation
+
+Each can spawn:
+
+AI session
+
+Terminal
+
+VSCode
+
+Browser (GitHub PR)
+
+Log viewer
+
+9. Advanced but V1-Compatible Features
+
+Even in V1, templates can support:
+
+Variable substitution
+
+Example:
+
+"init": "cd {repo}"
+
+User passes:
+
+ws new --template generic --repo D:\src\5ire --name "MCP refactor"
+10. Why This Makes the Idea Much Stronger
+
+Without template:
+
+You are grouping windows.
+
+With template:
+
+You are encoding engineering workflows.
+
+This becomes:
+
+"One command = one engineering lane."
+
+And that is powerful.
+
+11. What This Solves
+
+Parallel development on same repo
+
+Fast context switching
+
+Clear mental separation of tasks
+
+Reduced Alt-Tab chaos
+
+Reduced cognitive switching cost
+
+12. Strategic Assessment
+
+Now the idea is strong.
+
+Because:
+
+It is not about AI.
+
+It is about structured parallel work.
+
+It solves a real pain in multi-branch development.
+
+It leverages your window orchestration strengths.

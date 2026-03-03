@@ -305,5 +305,70 @@ namespace TopToolbar.Services.Windowing
 
             return true;
         }
+
+        public static bool TryActivateWindow(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero || !IsWindow(hwnd))
+            {
+                return false;
+            }
+
+            try
+            {
+                _ = ShowWindow(hwnd, SwShowNormal);
+                _ = BringWindowToTop(hwnd);
+                _ = SetForegroundWindow(hwnd);
+
+                if (GetForegroundWindow() == hwnd)
+                {
+                    return true;
+                }
+
+                var currentThread = GetCurrentThreadId();
+                var foreground = GetForegroundWindow();
+                var foregroundThread = foreground != IntPtr.Zero
+                    ? GetWindowThreadProcessId(foreground, out _)
+                    : 0;
+                var targetThread = GetWindowThreadProcessId(hwnd, out _);
+
+                var attachedToForeground = false;
+                var attachedToTarget = false;
+
+                try
+                {
+                    if (foregroundThread != 0 && foregroundThread != currentThread)
+                    {
+                        attachedToForeground = AttachThreadInput(currentThread, foregroundThread, true);
+                    }
+
+                    if (targetThread != 0 && targetThread != currentThread)
+                    {
+                        attachedToTarget = AttachThreadInput(currentThread, targetThread, true);
+                    }
+
+                    _ = ShowWindow(hwnd, SwShowNormal);
+                    _ = BringWindowToTop(hwnd);
+                    _ = SetForegroundWindow(hwnd);
+                }
+                finally
+                {
+                    if (attachedToTarget && targetThread != 0 && targetThread != currentThread)
+                    {
+                        _ = AttachThreadInput(currentThread, targetThread, false);
+                    }
+
+                    if (attachedToForeground && foregroundThread != 0 && foregroundThread != currentThread)
+                    {
+                        _ = AttachThreadInput(currentThread, foregroundThread, false);
+                    }
+                }
+
+                return GetForegroundWindow() == hwnd;
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }

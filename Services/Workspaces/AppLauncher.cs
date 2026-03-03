@@ -378,16 +378,18 @@ namespace TopToolbar.Services.Workspaces
             CancellationToken cancellationToken)
         {
             var expandedPath = ExpandPath(app.Path);
+            var resolvedWorkingDirectory = ResolveWorkingDirectory(app.WorkingDirectory);
             var useShellExecute =
                 expandedPath.StartsWith("shell:", StringComparison.OrdinalIgnoreCase)
                 || !File.Exists(expandedPath);
+            var effectiveArguments = BuildLaunchArguments(expandedPath, app, resolvedWorkingDirectory);
 
             var startInfo = new ProcessStartInfo
             {
                 FileName = expandedPath,
-                Arguments = string.IsNullOrWhiteSpace(app.CommandLineArguments) ? string.Empty : app.CommandLineArguments,
+                Arguments = effectiveArguments,
                 UseShellExecute = useShellExecute,
-                WorkingDirectory = DetermineWorkingDirectory(expandedPath, useShellExecute, app.WorkingDirectory),
+                WorkingDirectory = DetermineWorkingDirectory(expandedPath, useShellExecute, resolvedWorkingDirectory),
             };
 
             if (app.IsElevated && app.CanLaunchElevated)
@@ -398,6 +400,12 @@ namespace TopToolbar.Services.Workspaces
 
             try
             {
+                if (IsWindowsTerminalApp(expandedPath, app?.Name) && !string.IsNullOrWhiteSpace(resolvedWorkingDirectory))
+                {
+                    AppLogger.LogInfo(
+                        $"WorkspaceRuntime: terminal launch args adjusted for cwd. path='{expandedPath}', cwd='{resolvedWorkingDirectory}', args='{effectiveArguments}'.");
+                }
+
                 using var process = Process.Start(startInfo);
                 if (process == null)
                 {
@@ -476,6 +484,84 @@ namespace TopToolbar.Services.Workspaces
             }
 
             return AppContext.BaseDirectory;
+        }
+
+        private static string BuildLaunchArguments(
+            string expandedPath,
+            ApplicationDefinition app,
+            string resolvedWorkingDirectory)
+        {
+            var baseArguments = string.IsNullOrWhiteSpace(app?.CommandLineArguments)
+                ? string.Empty
+                : app.CommandLineArguments.Trim();
+
+            if (!IsWindowsTerminalApp(expandedPath, app?.Name))
+            {
+                return baseArguments;
+            }
+
+            if (string.IsNullOrWhiteSpace(resolvedWorkingDirectory))
+            {
+                return baseArguments;
+            }
+
+            if (ContainsWindowsTerminalStartDirectory(baseArguments))
+            {
+                return baseArguments;
+            }
+
+            var escapedPath = resolvedWorkingDirectory.Replace("\"", "\\\"", StringComparison.Ordinal);
+            var directoryArgument = $"-d \"{escapedPath}\"";
+            return string.IsNullOrWhiteSpace(baseArguments)
+                ? directoryArgument
+                : $"{directoryArgument} {baseArguments}";
+        }
+
+        private static bool ContainsWindowsTerminalStartDirectory(string arguments)
+        {
+            if (string.IsNullOrWhiteSpace(arguments))
+            {
+                return false;
+            }
+
+            return arguments.Contains(" --startingDirectory ", StringComparison.OrdinalIgnoreCase)
+                || arguments.StartsWith("--startingDirectory ", StringComparison.OrdinalIgnoreCase)
+                || arguments.Contains(" -d ", StringComparison.OrdinalIgnoreCase)
+                || arguments.StartsWith("-d ", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsWindowsTerminalApp(string path, string appName)
+        {
+            var normalizedPath = NormalizeProcessIdentity(path);
+            var normalizedName = NormalizeProcessIdentity(appName);
+            return string.Equals(normalizedPath, "wt", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedPath, "windowsterminal", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedName, "wt", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedName, "windowsterminal", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeProcessIdentity(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var normalized = value.Trim();
+            try
+            {
+                normalized = Path.GetFileName(normalized.Trim('"'));
+            }
+            catch
+            {
+            }
+
+            if (normalized.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = normalized[..^4];
+            }
+
+            return normalized.Trim();
         }
 
         private static string ResolveWorkingDirectory(string configuredWorkingDirectory)

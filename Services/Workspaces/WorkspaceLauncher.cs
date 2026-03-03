@@ -26,6 +26,8 @@ namespace TopToolbar.Services.Workspaces
         private static readonly TimeSpan WindowPostSettlePollInterval = TimeSpan.FromMilliseconds(400);
         private static readonly TimeSpan LaunchWindowSettleTimeout = TimeSpan.FromSeconds(2);
         private static readonly TimeSpan LaunchWindowSettlePollInterval = TimeSpan.FromMilliseconds(150);
+        private static readonly TimeSpan FocusActivationRetryInterval = TimeSpan.FromMilliseconds(150);
+        private const int FocusActivationAttempts = 3;
 
         private readonly WorkspaceDefinitionStore _definitionStore;
         private readonly WindowManager _windowManager;
@@ -44,7 +46,7 @@ namespace TopToolbar.Services.Workspaces
             _displayManager = displayManager;
         }
 
-        public async Task<bool> LaunchWorkspaceAsync(
+        public async Task<WorkspaceSwitchDiagnostics> LaunchWorkspaceAsync(
             string workspaceId,
             CancellationToken cancellationToken
         )
@@ -57,19 +59,36 @@ namespace TopToolbar.Services.Workspaces
                 );
             }
 
+            var normalizedWorkspaceId = workspaceId.Trim();
+            var result = new WorkspaceSwitchDiagnostics
+            {
+                WorkspaceId = normalizedWorkspaceId,
+            };
+
             var swTotal = Stopwatch.StartNew();
-            var swLoad = Stopwatch.StartNew();
+            WorkspaceSwitchDiagnostics FinalizeResult(bool ok)
+            {
+                swTotal.Stop();
+                result.Ok = ok;
+                result.DurationMs = swTotal.ElapsedMilliseconds;
+                LogSwitchSummary(result);
+                return result;
+            }
+
+            var swResolve = Stopwatch.StartNew();
             var workspace = await _definitionStore
-                .LoadByIdAsync(workspaceId, cancellationToken)
+                .LoadByIdAsync(normalizedWorkspaceId, cancellationToken)
                 .ConfigureAwait(false);
-            swLoad.Stop();
+            swResolve.Stop();
+            result.StageDurationsMs["resolve"] = swResolve.ElapsedMilliseconds;
             LogPerf(
-                $"WorkspaceRuntime: Loaded workspace '{workspaceId}' in {swLoad.ElapsedMilliseconds} ms"
+                $"WorkspaceRuntime: Loaded workspace '{normalizedWorkspaceId}' in {swResolve.ElapsedMilliseconds} ms"
             );
             if (workspace == null)
             {
-                AppLogger.LogWarning($"WorkspaceRuntime: workspace '{workspaceId}' not found.");
-                return false;
+                result.Errors.Add("not-found: workspace not found.");
+                AppLogger.LogWarning($"WorkspaceRuntime: workspace '{normalizedWorkspaceId}' not found.");
+                return FinalizeResult(false);
             }
 
             {
@@ -94,12 +113,13 @@ namespace TopToolbar.Services.Workspaces
                 }
 
                 var appCount = apps.Count;
-                LogPerf($"WorkspaceRuntime: Starting launch of {appCount} app(s) for '{workspaceId}'");
+                LogPerf($"WorkspaceRuntime: Starting launch of {appCount} app(s) for '{normalizedWorkspaceId}'");
 
                 if (appCount == 0)
                 {
-                    AppLogger.LogWarning($"WorkspaceRuntime: workspace '{workspaceId}' has no applications to launch.");
-                    return false;
+                    result.Errors.Add("not-found: workspace has no applications.");
+                    AppLogger.LogWarning($"WorkspaceRuntime: workspace '{normalizedWorkspaceId}' has no applications to launch.");
+                    return FinalizeResult(false);
                 }
 
                 // ============================================================
@@ -121,17 +141,17 @@ namespace TopToolbar.Services.Workspaces
                     // Pass 1: Try to assign existing windows to all apps (parallel, no launching)
                     LogPerf($"WorkspaceRuntime: Phase 1 Pass 1 - Assign existing windows");
                     var assignTasks = apps
-                        .Select(app => TryAssignExistingWindowAsync(app, workspaceId, snapshot, snapshotIndex, cancellationToken))
+                        .Select(app => TryAssignExistingWindowAsync(app, normalizedWorkspaceId, snapshot, snapshotIndex, cancellationToken))
                         .ToList();
                     
                     var assignResults = await Task.WhenAll(assignTasks).ConfigureAwait(false);
                     
                     for (int i = 0; i < apps.Count; i++)
                     {
-                        var result = assignResults[i];
-                        if (result.Success)
+                        var assignResult = assignResults[i];
+                        if (assignResult.Success)
                         {
-                            allResults.Add(result);
+                            allResults.Add(assignResult);
                         }
                         else
                         {
@@ -152,21 +172,23 @@ namespace TopToolbar.Services.Workspaces
                     LogPerf($"WorkspaceRuntime: Phase 1 Pass 2 - Launch {appsNeedingLaunch.Count} new windows");
                     foreach (var app in appsNeedingLaunch)
                     {
-                        var result = await LaunchNewWindowAsync(app, workspaceId, cancellationToken).ConfigureAwait(false);
-                        allResults.Add(result);
+                        var launchResult = await LaunchNewWindowAsync(app, normalizedWorkspaceId, cancellationToken).ConfigureAwait(false);
+                        allResults.Add(launchResult);
                     }
                 }
                 
                 swPhase1.Stop();
+                result.StageDurationsMs["claimLaunch"] = swPhase1.ElapsedMilliseconds;
                 
                 var successfulApps = allResults.Where(r => r.Success).ToList();
+                result.ClaimedCount = successfulApps.Count(r => !r.LaunchedNew);
+                result.LaunchedCount = successfulApps.Count(r => r.LaunchedNew);
                 LogPerf($"WorkspaceRuntime: Phase 1 done in {swPhase1.ElapsedMilliseconds} ms - {successfulApps.Count}/{appCount} apps ready");
 
                 if (successfulApps.Count == 0)
                 {
-                    swTotal.Stop();
-                    LogPerf($"WorkspaceRuntime: LaunchWorkspace('{workspaceId}') total {swTotal.ElapsedMilliseconds} ms; anySuccess=False");
-                    return false;
+                    result.Errors.Add("launch-timeout: no windows were assigned or launched.");
+                    return FinalizeResult(false);
                 }
 
                 // ============================================================
@@ -187,29 +209,45 @@ namespace TopToolbar.Services.Workspaces
                             cancellationToken))
                     .ToList();
                 
-                await Task.WhenAll(resizeTasks).ConfigureAwait(false);
+                var arrangedResults = await Task.WhenAll(resizeTasks).ConfigureAwait(false);
+                result.ArrangedCount = arrangedResults.Count(arranged => arranged);
                 swPhase2.Stop();
+                result.StageDurationsMs["arrange"] = swPhase2.ElapsedMilliseconds;
                 LogPerf($"WorkspaceRuntime: Phase 2 done in {swPhase2.ElapsedMilliseconds} ms");
 
                 // ============================================================
                 // Phase 3: Minimize extraneous windows
                 // ============================================================
+                var swPhase3 = Stopwatch.StartNew();
                 if (workspace.MoveExistingWindows)
                 {
                     var workspaceHandles = new HashSet<IntPtr>(successfulApps.Select(r => r.Handle));
                     var workspaceProcessIds = GetWorkspaceProcessIds(successfulApps);
-                    var swPhase3 = Stopwatch.StartNew();
-                    MinimizeExtraneousWindows(workspaceHandles, workspaceProcessIds);
-                    swPhase3.Stop();
-                    LogPerf($"WorkspaceRuntime: Phase 3 - MinimizeExtraneousWindows took {swPhase3.ElapsedMilliseconds} ms");
+                    result.MinimizedCount = MinimizeExtraneousWindows(workspaceHandles, workspaceProcessIds);
+                    LogPerf($"WorkspaceRuntime: Phase 3 - MinimizeExtraneousWindows minimized {result.MinimizedCount} window(s)");
+                }
+                swPhase3.Stop();
+                result.StageDurationsMs["minimize"] = swPhase3.ElapsedMilliseconds;
+
+                // ============================================================
+                // Phase 4: Focus target window using role priority with fallback.
+                // ============================================================
+                var swPhase4 = Stopwatch.StartNew();
+                var focus = await ApplyFocusPolicyAsync(workspace, successfulApps, cancellationToken).ConfigureAwait(false);
+                swPhase4.Stop();
+                result.StageDurationsMs["focus"] = swPhase4.ElapsedMilliseconds;
+                if (focus.Success)
+                {
+                    result.FocusedRole = focus.Role;
+                    result.FocusedHwnd = ToWindowHandleString(focus.Handle);
+                }
+                else
+                {
+                    result.Errors.Add($"focus-failed: {focus.Error}");
                 }
 
-                swTotal.Stop();
-                LogPerf(
-                    $"WorkspaceRuntime: LaunchWorkspace('{workspaceId}') total {swTotal.ElapsedMilliseconds} ms; anySuccess=True"
-                );
                 await TryUpdateLastLaunchedTimeAsync(workspace, cancellationToken).ConfigureAwait(false);
-                return true;
+                return FinalizeResult(true);
             }
         }
 

@@ -3,7 +3,9 @@
 // See the LICENSE file in the project root for more information.
 
 using System;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
+using TopToolbar.Logging;
 
 namespace TopToolbar
 {
@@ -16,41 +18,61 @@ namespace TopToolbar
                 return;
             }
 
-            MainStack.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
-
-            double scale = ToolbarContainer.XamlRoot?.RasterizationScale ?? 1.0;
-
-            double desiredWidthDip = MainStack.DesiredSize.Width + ToolbarContainer.Padding.Left + ToolbarContainer.Padding.Right;
-            double desiredHeightDip = MainStack.DesiredSize.Height + ToolbarContainer.Padding.Top + ToolbarContainer.Padding.Bottom;
-            if (double.IsNaN(desiredHeightDip) || desiredHeightDip <= 0)
+            try
             {
-                desiredHeightDip = ToolbarContainer.ActualHeight > 0 ? ToolbarContainer.ActualHeight : ToolbarMetrics.ToolbarHeight;
+                MainStack.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
             }
-            else
+            catch (COMException ex)
             {
-                desiredHeightDip = Math.Max(desiredHeightDip, ToolbarMetrics.ToolbarHeight);
+                AppLogger.LogWarning($"ToolbarWindow.ResizeToContent: skipped due COM exception - {ex.Message}");
+                return;
             }
-
-            var displayArea = DisplayArea.GetFromWindowId(this.AppWindow.Id, DisplayAreaFallback.Primary);
-            double maxWidthDip = desiredWidthDip;
-            double maxHeightDip = desiredHeightDip;
-            if (displayArea != null)
+            catch (InvalidOperationException ex)
             {
-                double shadowPadding = ToolbarMetrics.ToolbarShadowPaddingValue;
-                maxWidthDip = Math.Max(ToolbarMetrics.ToolbarButtonSize, (displayArea.WorkArea.Width / scale) - (shadowPadding * 2));
-                maxHeightDip = Math.Max(ToolbarMetrics.ToolbarButtonSize, (displayArea.WorkArea.Height / scale) - (shadowPadding * 2));
+                AppLogger.LogWarning($"ToolbarWindow.ResizeToContent: skipped due invalid operation - {ex.Message}");
+                return;
             }
 
-            double widthDip = Math.Min(desiredWidthDip, maxWidthDip);
-            double heightDip = Math.Min(desiredHeightDip, maxHeightDip);
-            double widthWithShadowDip = widthDip + (ToolbarMetrics.ToolbarShadowPaddingValue * 2);
-            double heightWithShadowDip = heightDip + (ToolbarMetrics.ToolbarShadowPaddingValue * 2);
+            try
+            {
+                double scale = ToolbarContainer.XamlRoot?.RasterizationScale ?? 1.0;
 
-            int widthPx = (int)Math.Ceiling(widthWithShadowDip * scale);
-            int heightPx = (int)Math.Ceiling(heightWithShadowDip * scale);
+                double desiredWidthDip = MainStack.DesiredSize.Width + ToolbarContainer.Padding.Left + ToolbarContainer.Padding.Right;
+                double desiredHeightDip = MainStack.DesiredSize.Height + ToolbarContainer.Padding.Top + ToolbarContainer.Padding.Bottom;
+                if (double.IsNaN(desiredHeightDip) || desiredHeightDip <= 0)
+                {
+                    desiredHeightDip = ToolbarContainer.ActualHeight > 0 ? ToolbarContainer.ActualHeight : ToolbarMetrics.ToolbarHeight;
+                }
+                else
+                {
+                    desiredHeightDip = Math.Max(desiredHeightDip, ToolbarMetrics.ToolbarHeight);
+                }
 
-            this.AppWindow.Resize(new Windows.Graphics.SizeInt32(widthPx, heightPx));
-            _topBarTriggerWidth = Math.Max(widthPx, TriggerWindowMinWidth);
+                var displayArea = DisplayArea.GetFromWindowId(this.AppWindow.Id, DisplayAreaFallback.Primary);
+                double maxWidthDip = desiredWidthDip;
+                double maxHeightDip = desiredHeightDip;
+                if (displayArea != null)
+                {
+                    double shadowPadding = ToolbarMetrics.ToolbarShadowPaddingValue;
+                    maxWidthDip = Math.Max(ToolbarMetrics.ToolbarButtonSize, (displayArea.WorkArea.Width / scale) - (shadowPadding * 2));
+                    maxHeightDip = Math.Max(ToolbarMetrics.ToolbarButtonSize, (displayArea.WorkArea.Height / scale) - (shadowPadding * 2));
+                }
+
+                double widthDip = Math.Min(desiredWidthDip, maxWidthDip);
+                double heightDip = Math.Min(desiredHeightDip, maxHeightDip);
+                double widthWithShadowDip = widthDip + (ToolbarMetrics.ToolbarShadowPaddingValue * 2);
+                double heightWithShadowDip = heightDip + (ToolbarMetrics.ToolbarShadowPaddingValue * 2);
+
+                int widthPx = (int)Math.Ceiling(widthWithShadowDip * scale);
+                int heightPx = (int)Math.Ceiling(heightWithShadowDip * scale);
+
+                this.AppWindow.Resize(new Windows.Graphics.SizeInt32(widthPx, heightPx));
+                _topBarTriggerWidth = Math.Max(widthPx, TriggerWindowMinWidth);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"ToolbarWindow.ResizeToContent: skipped due exception - {ex.Message}");
+            }
         }
 
         private void PositionAtTopCenter()

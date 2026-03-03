@@ -211,7 +211,17 @@ namespace TopToolbar.Providers
                     return true;
                 }
 
-                if (!string.Equals(o.Name ?? string.Empty, n.Name ?? string.Empty, StringComparison.Ordinal))
+                if (!string.Equals(o.DisplayName ?? string.Empty, n.DisplayName ?? string.Empty, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+                if (!string.Equals(o.TemplateDisplayName ?? string.Empty, n.TemplateDisplayName ?? string.Empty, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+                if (!string.Equals(o.InstanceName ?? string.Empty, n.InstanceName ?? string.Empty, StringComparison.Ordinal))
                 {
                     return true;
                 }
@@ -226,9 +236,7 @@ namespace TopToolbar.Providers
                     return true;
                 }
 
-                var oOrder = o.SortOrder ?? double.NaN;
-                var nOrder = n.SortOrder ?? double.NaN;
-                if (!oOrder.Equals(nOrder))
+                if (o.LastLaunchedTime != n.LastLaunchedTime)
                 {
                     return true;
                 }
@@ -308,12 +316,11 @@ namespace TopToolbar.Providers
                     continue;
                 }
 
-                var displayName = string.IsNullOrWhiteSpace(workspace.Name) ? workspace.Id : workspace.Name;
                 var descriptor = new ActionDescriptor
                 {
                     Id = WorkspacePrefix + workspace.Id,
                     ProviderId = Id,
-                    Title = displayName,
+                    Title = workspace.DisplayName,
                     Subtitle = workspace.Id,
                     Kind = ActionKind.Launch,
                     GroupHint = "workspaces",
@@ -322,9 +329,19 @@ namespace TopToolbar.Providers
                     CanExecute = true,
                 };
 
-                if (!string.IsNullOrWhiteSpace(workspace.Name))
+                if (!string.IsNullOrWhiteSpace(workspace.DisplayName))
                 {
-                    descriptor.Keywords.Add(workspace.Name);
+                    descriptor.Keywords.Add(workspace.DisplayName);
+                }
+
+                if (!string.IsNullOrWhiteSpace(workspace.TemplateDisplayName))
+                {
+                    descriptor.Keywords.Add(workspace.TemplateDisplayName);
+                }
+
+                if (!string.IsNullOrWhiteSpace(workspace.InstanceName))
+                {
+                    descriptor.Keywords.Add(workspace.InstanceName);
                 }
 
                 descriptor.Keywords.Add(workspace.Id);
@@ -347,74 +364,32 @@ namespace TopToolbar.Providers
                 },
             };
 
-            var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-            var definitions = await _definitionStore.LoadAllAsync(cancellationToken).ConfigureAwait(false);
-            var workspaceLookup = definitions
-                .Where(ws => ws != null && !string.IsNullOrWhiteSpace(ws.Id))
-                .ToDictionary(ws => ws.Id, StringComparer.OrdinalIgnoreCase);
-
-            var orderedButtons = (config.Buttons != null && config.Buttons.Count > 0)
-                ? config.Buttons
-                    .Where(b => b != null && b.Enabled)
-                    .OrderBy(b => b.SortOrder ?? double.MaxValue)
-                    .ThenBy(b => b.Name ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                    .ToList()
-                : workspaceLookup.Values
-                    .Select(ws => new WorkspaceButtonConfig
-                    {
-                        Id = BuildButtonIdInternal(ws.Id),
-                        WorkspaceId = ws.Id,
-                        Name = string.IsNullOrWhiteSpace(ws.Name) ? ws.Id : ws.Name,
-                        Description = string.Empty,
-                        Enabled = true,
-                        Icon = new ProviderIcon { Type = ProviderIconType.Glyph, Glyph = "\uE7F4" },
-                    })
-                    .ToList();
-
-            foreach (var buttonConfig in orderedButtons)
+            var workspaces = await GetWorkspacesAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var workspace in workspaces)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (buttonConfig == null)
+                if (!workspace.Enabled)
                 {
                     continue;
                 }
-
-                var workspaceId = !string.IsNullOrWhiteSpace(buttonConfig.WorkspaceId)
-                    ? buttonConfig.WorkspaceId
-                    : ExtractWorkspaceId(buttonConfig.Id);
-
-                if (string.IsNullOrWhiteSpace(workspaceId))
-                {
-                    continue;
-                }
-
-                workspaceLookup.TryGetValue(workspaceId, out var workspaceDefinition);
-
-                var displayName = !string.IsNullOrWhiteSpace(buttonConfig.Name)
-                    ? buttonConfig.Name
-                    : workspaceDefinition?.Name ?? workspaceId;
-
-                var description = !string.IsNullOrWhiteSpace(buttonConfig.Description)
-                    ? buttonConfig.Description
-                    : string.Empty;
 
                 var button = new ToolbarButton
                 {
-                    Id = BuildButtonIdInternal(workspaceId),
-                    Name = displayName,
-                    Description = description,
+                    Id = BuildButtonIdInternal(workspace.Id),
+                    Name = workspace.DisplayName,
+                    Description = workspace.Id,
                     IconGlyph = "\uE7F4",
                     IconType = ToolbarIconType.Catalog,
                     Action = new ToolbarAction
                     {
                         Type = ToolbarActionType.Provider,
                         ProviderId = Id,
-                        ProviderActionId = WorkspacePrefix + workspaceId,
+                        ProviderActionId = WorkspacePrefix + workspace.Id,
                     },
                 };
 
-                ApplyIcon(button, buttonConfig.Icon);
+                ApplyIcon(button, workspace.Icon);
                 group.Buttons.Add(button);
             }
 
@@ -602,19 +577,100 @@ namespace TopToolbar.Providers
                     continue;
                 }
 
-                var name = workspace.Name?.Trim();
+                var hasApps = workspace.Applications != null && workspace.Applications.Count > 0;
+                var hasTemplate = !string.IsNullOrWhiteSpace(workspace.TemplateName);
+                if (!hasApps && !hasTemplate)
+                {
+                    // Hide legacy placeholder entries that cannot launch anything.
+                    continue;
+                }
+
                 var button = config.Buttons?.FirstOrDefault(b =>
                     string.Equals(b.WorkspaceId, id, StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(b.Id, BuildButtonIdInternal(id), StringComparison.OrdinalIgnoreCase));
 
+                var displayName = ResolveDisplayTitle(workspace, id);
+                var templateDisplayName = ResolveTemplateDisplayName(workspace, displayName);
+                var instanceName = ResolveInstanceName(workspace, displayName, id);
                 var iconSignature = BuildIconSignature(button?.Icon);
                 var enabled = button?.Enabled ?? true;
-                var sortOrder = button?.SortOrder;
+                var lastLaunchedTime = workspace.LastLaunchedTime ?? long.MinValue;
+                var icon = button?.Icon ?? new ProviderIcon { Type = ProviderIconType.Glyph, Glyph = "\uE7F4" };
 
-                records.Add(new WorkspaceRecord(id, string.IsNullOrWhiteSpace(name) ? null : name, iconSignature, enabled, sortOrder));
+                records.Add(new WorkspaceRecord(
+                    id,
+                    displayName,
+                    templateDisplayName,
+                    instanceName,
+                    lastLaunchedTime,
+                    icon,
+                    iconSignature,
+                    enabled));
             }
 
-            return records;
+            return records
+                .OrderBy(record => record.TemplateDisplayName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ThenByDescending(record => record.LastLaunchedTime)
+                .ThenBy(record => record.InstanceName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static string ResolveDisplayTitle(WorkspaceDefinition workspace, string fallbackId)
+        {
+            if (!string.IsNullOrWhiteSpace(workspace?.WorkspaceTitle))
+            {
+                return workspace.WorkspaceTitle.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(workspace?.Name))
+            {
+                return workspace.Name.Trim();
+            }
+
+            return fallbackId ?? string.Empty;
+        }
+
+        private static string ResolveTemplateDisplayName(WorkspaceDefinition workspace, string fallbackDisplayName)
+        {
+            if (workspace == null)
+            {
+                return fallbackDisplayName ?? string.Empty;
+            }
+
+            if (!string.IsNullOrWhiteSpace(workspace.WorkspaceTitle) && !string.IsNullOrWhiteSpace(workspace.InstanceName))
+            {
+                var suffix = " · " + workspace.InstanceName.Trim();
+                if (workspace.WorkspaceTitle.EndsWith(suffix, StringComparison.Ordinal))
+                {
+                    var prefix = workspace.WorkspaceTitle[..^suffix.Length].Trim();
+                    if (!string.IsNullOrWhiteSpace(prefix))
+                    {
+                        return prefix;
+                    }
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(workspace.TemplateName))
+            {
+                return workspace.TemplateName.Trim();
+            }
+
+            return fallbackDisplayName ?? string.Empty;
+        }
+
+        private static string ResolveInstanceName(WorkspaceDefinition workspace, string fallbackDisplayName, string fallbackId)
+        {
+            if (!string.IsNullOrWhiteSpace(workspace?.InstanceName))
+            {
+                return workspace.InstanceName.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(fallbackDisplayName))
+            {
+                return fallbackDisplayName;
+            }
+
+            return fallbackId ?? string.Empty;
         }
 
         public void Dispose()
@@ -677,6 +733,14 @@ namespace TopToolbar.Providers
             }
         }
 
-        private sealed record WorkspaceRecord(string Id, string Name, string IconSignature, bool Enabled, double? SortOrder);
+        private sealed record WorkspaceRecord(
+            string Id,
+            string DisplayName,
+            string TemplateDisplayName,
+            string InstanceName,
+            long LastLaunchedTime,
+            ProviderIcon Icon,
+            string IconSignature,
+            bool Enabled);
     }
 }

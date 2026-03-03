@@ -15,7 +15,7 @@
     Height="720"
     MinWidth="960"
     MinHeight="640"
-    Title="Toolbar Settings">
+    Title="Workspace Center Settings">
     <Grid x:Name="LayoutRoot" Background="Transparent">
         <Grid.Resources>
             <conv:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
@@ -236,7 +236,7 @@
                 </Border>
                 <StackPanel Spacing="0"
                         VerticalAlignment="Center">
-                    <TextBlock Text="Toolbar Settings"
+                    <TextBlock Text="Workspace Center Settings"
                             FontSize="14"
                             FontWeight="Normal"/>
                 </StackPanel>
@@ -262,7 +262,8 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
@@ -290,10 +291,33 @@
                         </Grid>
                     </ListViewItem>
 
+                    <ListViewItem Grid.Row="1"
+                                  x:Name="TemplatesItem"
+                                  IsSelected="{x:Bind ViewModel.IsTemplatesSelected, Mode=TwoWay}"
+                                  Tapped="OnTemplatesItemTapped"
+                                  Style="{StaticResource ToolbarListItemStyle}"
+                                  Padding="4,6">
+                        <Grid ColumnSpacing="8" Padding="6,0,4,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <FontIcon FontFamily="Segoe MDL2 Assets"
+                                      Glyph="&#xE8D2;"
+                                      FontSize="14"
+                                      VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="Templates"
+                                       FontWeight="Normal"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListViewItem>
+
                     <!-- Groups header with add/remove -->
-                    <Grid Grid.Row="1"
+                    <Grid Grid.Row="2"
                           Margin="0,8,0,2"
-                          ColumnSpacing="8">
+                          ColumnSpacing="8"
+                          Visibility="Collapsed">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
@@ -325,13 +349,14 @@
                                     IsEnabled="{x:Bind ViewModel.CanRemoveSelectedGroup, Mode=OneWay}"/>
                         </StackPanel>
                     </Grid>
-                    <ListView Grid.Row="2"
+                    <ListView Grid.Row="3"
                               x:Name="GroupsList"
                               ItemsSource="{x:Bind ViewModel.Groups, Mode=OneWay}"
                               SelectedItem="{x:Bind ViewModel.SelectedGroup, Mode=TwoWay}"
                               SelectionMode="Single"
                               BorderThickness="0"
                               IsItemClickEnabled="True"
+                              Visibility="Collapsed"
                               MinHeight="120"
                               ItemContainerStyle="{StaticResource ToolbarListItemStyle}">
                         <ListView.ItemTemplate>
@@ -383,10 +408,11 @@
                         </ListView.Resources>
                     </ListView>
 
-                    <!-- Workspaces header with add/remove -->
-                    <Grid Grid.Row="3"
+                    <!-- Workspaces header/list are hidden in template-only settings mode -->
+                    <Grid Grid.Row="4"
                           Margin="0,8,0,2"
-                          ColumnSpacing="8">
+                          ColumnSpacing="8"
+                          Visibility="Collapsed">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
@@ -410,11 +436,6 @@
                         <StackPanel Orientation="Horizontal"
                                     Grid.Column="1"
                                     Spacing="6">
-                            <Button Style="{StaticResource AccentButtonStyle}"
-                                    MinWidth="0"
-                                    Padding="10,4"
-                                    Content="Add"
-                                    Click="OnAddWorkspace"/>
                             <Button MinWidth="0"
                                     Padding="10,4"
                                     Content="Remove"
@@ -422,7 +443,7 @@
                                     IsEnabled="{x:Bind ViewModel.HasSelectedWorkspace, Mode=OneWay}"/>
                         </StackPanel>
                     </Grid>
-                    <ListView Grid.Row="4"
+                    <ListView Grid.Row="5"
                               x:Name="WorkspacesList"
                               ItemsSource="{x:Bind ViewModel.WorkspaceButtons, Mode=OneWay}"
                               SelectedItem="{x:Bind ViewModel.SelectedWorkspace, Mode=TwoWay}"
@@ -430,6 +451,7 @@
                               BorderThickness="0"
                               IsItemClickEnabled="True"
                               MinHeight="120"
+                              Visibility="Collapsed"
                               ItemContainerStyle="{StaticResource ToolbarListItemStyle}">
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="vm:WorkspaceButtonViewModel">
@@ -445,7 +467,7 @@
                                             FontSize="14"
                                             VerticalAlignment="Center"/>
                                     <TextBlock Grid.Column="1"
-                                            Text="{x:Bind Name, Mode=OneWay}"
+                                            Text="{x:Bind DisplayTitle, Mode=OneWay}"
                                             FontWeight="Normal"
                                             VerticalAlignment="Center"
                                             TextTrimming="CharacterEllipsis"/>
@@ -559,16 +581,29 @@
                                 </ComboBox>
                             </tkcontrols:SettingsCard>
 
-                            <tkcontrols:SettingsCard Header="Workspace snapshot"
-                                                    Description="Capture the current window layout as a workspace.">
-                                <Button Content="Create snapshot"
-                                        HorizontalAlignment="Left"
-                                        Click="OnSnapshotWorkspace"/>
+                        </StackPanel>
+
+                        <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsTemplatesSelected, Mode=OneWay}">
+                            <TextBlock Text="Templates"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"/>
+
+                            <tkcontrols:SettingsCard Header="Template management"
+                                                    Description="Create and configure templates used by New Workspace.">
+                                <StackPanel Orientation="Horizontal"
+                                            Spacing="8">
+                                    <Button Content="Create template"
+                                            HorizontalAlignment="Left"
+                                            Click="OnCreateWorkspaceTemplate"/>
+                                    <Button Content="Configure templates"
+                                            HorizontalAlignment="Left"
+                                            Click="OnManageWorkspaceTemplates"/>
+                                </StackPanel>
                             </tkcontrols:SettingsCard>
                         </StackPanel>
 
                         <!-- Editable group settings (user-created groups only) -->
-                        <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsUserGroupSelected, Mode=OneWay}">
+                        <StackPanel Spacing="16" Visibility="Collapsed">
                             <tkcontrols:SettingsCard x:Name="GroupNameEnableButton" 
                                                             Header="{x:Bind ViewModel.SelectedGroup.Name, Mode=OneWay}"
                                                             Description="{x:Bind ViewModel.SelectedGroup.Description, Mode=OneWay}">
@@ -677,44 +712,16 @@
                         </StackPanel>
 
                         <!-- Default groups (locked) -->
-                        <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsDefaultActionsGroupSelected, Mode=OneWay}">
-                            <tkcontrols:SettingsCard Header="Built-in"
-                                                    Description="Locked group">
-                                <ToggleSwitch IsOn="{x:Bind ViewModel.SystemControlsEnabled, Mode=TwoWay}"
-                                              OnContent=""
-                                              OffContent="" />
-                            </tkcontrols:SettingsCard>
-
-                            <Grid ColumnSpacing="10"
-                                    VerticalAlignment="Center"
-                                    Margin="0,10,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Buttons"
-                                    FontSize="15"
-                                    FontWeight="SemiBold"
-                                    VerticalAlignment="Center"
-                                    Grid.Column="0"/>
-                                <Rectangle Width="1"
-                                    Height="18"
-                                    Fill="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    Opacity="0.35"
-                                    VerticalAlignment="Center"
-                                    Grid.Column="1"/>
-                            </Grid>
-
-                            <tkcontrols:SettingsCard Header="Media">
-                                <ToggleSwitch IsOn="{x:Bind ViewModel.MediaPlayPauseEnabled, Mode=TwoWay}"
-                                              OnContent=""
-                                              OffContent="" />
+                        <StackPanel Spacing="16" Visibility="Collapsed">
+                            <tkcontrols:SettingsCard Header="Legacy Actions"
+                                                    Description="Workspace Center mode disables legacy media/system controls.">
+                                <TextBlock Text="This section is kept only for backward compatibility."
+                                           TextWrapping="Wrap"/>
                             </tkcontrols:SettingsCard>
                         </StackPanel>
 
-                        <!-- Workspace settings (only when a workspace is selected) -->
-                        <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsWorkspaceSelected, Mode=OneWay}">
+                        <!-- Workspace settings are hidden in template-only settings mode -->
+                        <StackPanel Spacing="16" Visibility="Collapsed">
                             <TextBlock Text="Workspace"
                                        FontSize="18"
                                        FontWeight="SemiBold"/>
@@ -731,6 +738,36 @@
 
                             <tkcontrols:SettingsCard Header="Enabled">
                                 <ToggleSwitch IsOn="{x:Bind ViewModel.SelectedWorkspace.Enabled, Mode=TwoWay}"/>
+                            </tkcontrols:SettingsCard>
+
+                            <tkcontrols:SettingsCard Header="Workspace title">
+                                <TextBlock Text="{x:Bind ViewModel.SelectedWorkspace.WorkspaceTitle, Mode=OneWay}"
+                                           TextWrapping="Wrap"/>
+                            </tkcontrols:SettingsCard>
+
+                            <tkcontrols:SettingsCard Header="Template">
+                                <TextBlock Text="{x:Bind ViewModel.SelectedWorkspace.TemplateName, Mode=OneWay}"
+                                           TextWrapping="Wrap"/>
+                            </tkcontrols:SettingsCard>
+
+                            <tkcontrols:SettingsCard Header="Instance">
+                                <TextBlock Text="{x:Bind ViewModel.SelectedWorkspace.InstanceName, Mode=OneWay}"
+                                           TextWrapping="Wrap"/>
+                            </tkcontrols:SettingsCard>
+
+                            <tkcontrols:SettingsCard Header="Repository root">
+                                <TextBlock Text="{x:Bind ViewModel.SelectedWorkspace.RepoRoot, Mode=OneWay}"
+                                           TextWrapping="Wrap"/>
+                            </tkcontrols:SettingsCard>
+
+                            <tkcontrols:SettingsCard Header="Focus priority">
+                                <TextBlock Text="{x:Bind ViewModel.SelectedWorkspace.FocusPriorityDisplay, Mode=OneWay}"
+                                           TextWrapping="Wrap"/>
+                            </tkcontrols:SettingsCard>
+
+                            <tkcontrols:SettingsCard Header="Last launched">
+                                <TextBlock Text="{x:Bind ViewModel.SelectedWorkspace.LastLaunchedDisplay, Mode=OneWay}"
+                                           TextWrapping="Wrap"/>
                             </tkcontrols:SettingsCard>
 
                             <!-- Applications header with add -->
