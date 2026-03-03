@@ -11,8 +11,8 @@ Scope: Window management, workspace persistence/management, snapshot flow, launc
 - Location updates use lightweight bounds/visibility refresh paths.
 
 ### 2) Workspace persistence
-- Definitions: `%LOCALAPPDATA%\\TopToolbar\\config\\workspaces.json`.
-- Provider config/buttons: `%LOCALAPPDATA%\\TopToolbar\\Providers\\WorkspaceProvider.json`.
+- Definitions: `%LOCALAPPDATA%\\TopToolbar-Standalone\\config\\workspaces.json`.
+- Provider config/buttons: `%LOCALAPPDATA%\\TopToolbar-Standalone\\Providers\\WorkspaceProvider.json`.
 - Both stores now use:
   - cross-process sidecar lock files,
   - version-checked compare-and-retry writes,

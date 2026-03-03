@@ -1,4 +1,4 @@
-# TopToolbar Built-in Default Actions - Dev Spec (v1)
+# Dev Grid Built-in Default Actions - Dev Spec (v1)
 
 Date: 2026-02-16  
 Scope: Add built-in "System Controls" group with contextual Media Play/Pause action, plus settings toggles.

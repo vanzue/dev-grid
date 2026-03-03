@@ -2,9 +2,10 @@
 
 ## Storage Paths (v1)
 
-- Templates: `%LOCALAPPDATA%\\TopToolbar\\config\\templates\\`
-- Workspace instances: `%LOCALAPPDATA%\\TopToolbar\\config\\workspaces.json`
-- Provider buttons/config: `%LOCALAPPDATA%\\TopToolbar\\Providers\\WorkspaceProvider.json`
+- Templates: `%LOCALAPPDATA%\\TopToolbar-Standalone\\config\\templates\\`
+- Workspace instances: `%LOCALAPPDATA%\\TopToolbar-Standalone\\config\\workspaces.json`
+- Provider buttons/config: `%LOCALAPPDATA%\\TopToolbar-Standalone\\Providers\\WorkspaceProvider.json`
+- Root override (optional): `TOPTOOLBAR_APPDATA_ROOT`
 
 ## TemplateDefinition Schema
 
@@ -68,6 +69,7 @@
 
 ### Slot constraints
 
+- `monitorPolicy`: currently `primary|current|any` in Settings UI; runtime also supports `explicit:<id>` when loaded from JSON.
 - `role` must exist in `windows.role`.
 - `x`, `y`, `w`, `h` are floats in `[0,1]`.
 - `w > 0`, `h > 0`.

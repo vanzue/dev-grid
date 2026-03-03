@@ -1,8 +1,8 @@
-# TopToolbar Right-Click Button Delete Feature
+# Dev Grid Right-Click Button Delete Feature
 
 ## Summary
 
-Successfully implemented right-click context menu functionality for TopToolbar buttons that allows users to delete buttons with immediate persistence to the configuration file.
+Successfully implemented right-click context menu functionality for Dev Grid toolbar buttons that allows users to delete buttons with immediate persistence to the configuration file.
 
 ## What Was Implemented
 

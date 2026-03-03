@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-Define a template-first workspace system for TopToolbar where:
+Define a template-first workspace system for Dev Grid where:
 
 - A template captures reusable workflow structure.
 - A workspace instance is a named task lane created from a template.
@@ -30,7 +30,7 @@ The implementation reuses these runtime components:
 - `WorkspaceProvider` for toolbar actions/buttons.
 - `WorkspacesRuntimeService` for launch orchestration.
 - `WorkspaceLauncher` phases (reuse, launch, arrange, minimize).
-- `WorkspaceDefinitionStore` in `%LOCALAPPDATA%\\TopToolbar\\config\\workspaces.json`.
+- `WorkspaceDefinitionStore` in `%LOCALAPPDATA%\\TopToolbar-Standalone\\config\\workspaces.json`.
 
 No launch-engine rewrite is required.
 
@@ -127,7 +127,7 @@ Before save:
 
 ### FR-1 Template storage
 
-- Root: `%LOCALAPPDATA%\\TopToolbar\\config\\templates\\`
+- Root: `%LOCALAPPDATA%\\TopToolbar-Standalone\\config\\templates\\`
 - One file per template: `<template-id>.json`
 - UTF-8 JSON
 - Hot reload on provider refresh

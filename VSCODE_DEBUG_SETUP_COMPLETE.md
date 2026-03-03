@@ -2,7 +2,7 @@
 
 ## Summary
 
-Successfully added complete VSCode debug support to the TopToolbar project with full documentation and automation.
+Successfully added complete VSCode debug support to the Dev Grid project with full documentation and automation.
 
 ## Configuration Files Created
 
@@ -22,9 +22,9 @@ Successfully added complete VSCode debug support to the TopToolbar project with 
 ## Features Implemented
 
 ### 1. Launch Configurations
-- **Launch TopToolbar (x64 Debug)**: Debug on x64 platform
-- **Launch TopToolbar (ARM64 Debug)**: Debug on ARM64 platform
-- **Attach to TopToolbar Process**: Attach to running process
+- **Launch TopToolbar (x64 Debug)**: Debug Dev Grid on x64 platform
+- **Launch TopToolbar (ARM64 Debug)**: Debug Dev Grid on ARM64 platform
+- **Attach to TopToolbar Process**: Attach to the running Dev Grid process
 - Pre-launch build automation
 - Proper console output routing
 

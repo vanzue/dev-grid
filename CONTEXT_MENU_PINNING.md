@@ -1,4 +1,4 @@
-# TopToolbar Context Menu Pinning (Win11)
+# Dev Grid Context Menu Pinning (Win11)
 
 ## Goals
 - Allow pinning from File Explorer without opening settings.
