@@ -8,6 +8,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using TopToolbar.Logging;
 using Windows.Graphics;
 using Windows.UI;
 using WinUIEx;
@@ -46,6 +47,8 @@ namespace TopToolbar
             var root = new Grid
             {
                 Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch,
             };
 
             host.Content = root;
@@ -60,10 +63,30 @@ namespace TopToolbar
 
             if (root.XamlRoot == null)
             {
+                AppLogger.LogWarning("TransparentOverlayHost: root.XamlRoot was null after activation.");
                 host.Close();
                 return null;
             }
 
+            try
+            {
+                var appSize = host.AppWindow?.Size ?? new SizeInt32(0, 0);
+                var scale = root.XamlRoot.RasterizationScale <= 0 ? 1d : root.XamlRoot.RasterizationScale;
+                if (appSize.Width > 0 && appSize.Height > 0)
+                {
+                    root.Width = appSize.Width / scale;
+                    root.Height = appSize.Height / scale;
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"TransparentOverlayHost: failed to size root - {ex.Message}");
+            }
+
+            var position = host.AppWindow?.Position ?? new PointInt32(0, 0);
+            var size = host.AppWindow?.Size ?? new SizeInt32(0, 0);
+            AppLogger.LogInfo(
+                $"TransparentOverlayHost: created. fullscreen={fullscreen}, pos=({position.X},{position.Y}), size=({size.Width},{size.Height})");
             return new TransparentOverlayHost(host, root, ownsHost: true);
         }
 
@@ -96,9 +119,51 @@ namespace TopToolbar
 
             try
             {
-                var displayArea = owner != null
-                    ? DisplayArea.GetFromWindowId(owner.AppWindow.Id, DisplayAreaFallback.Primary)
-                    : DisplayArea.GetFromWindowId(appWindow.Id, DisplayAreaFallback.Primary);
+                DisplayArea displayArea = null;
+                if (owner?.AppWindow != null)
+                {
+                    try
+                    {
+                        displayArea = DisplayArea.GetFromWindowId(owner.AppWindow.Id, DisplayAreaFallback.Primary);
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.LogWarning($"TransparentOverlayHost: owner window-id lookup failed - {ex.Message}");
+                    }
+
+                    if (displayArea == null)
+                    {
+                        try
+                        {
+                            var ownerPos = owner.AppWindow.Position;
+                            var ownerSize = owner.AppWindow.Size;
+                            var probe = new PointInt32(
+                                ownerPos.X + Math.Max(ownerSize.Width / 2, 1),
+                                ownerPos.Y + Math.Max(ownerSize.Height / 2, 1));
+                            displayArea = DisplayArea.GetFromPoint(probe, DisplayAreaFallback.Primary);
+                            AppLogger.LogInfo(
+                                $"TransparentOverlayHost: owner point fallback probe=({probe.X},{probe.Y}), ownerPos=({ownerPos.X},{ownerPos.Y}), ownerSize=({ownerSize.Width},{ownerSize.Height})");
+                        }
+                        catch (Exception ex)
+                        {
+                            AppLogger.LogWarning($"TransparentOverlayHost: owner point fallback failed - {ex.Message}");
+                        }
+                    }
+                }
+
+                if (displayArea == null)
+                {
+                    try
+                    {
+                        displayArea = DisplayArea.GetFromWindowId(appWindow.Id, DisplayAreaFallback.Primary);
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.LogWarning($"TransparentOverlayHost: host window-id lookup failed - {ex.Message}");
+                    }
+                }
+
+                displayArea ??= DisplayArea.GetFromPoint(new PointInt32(0, 0), DisplayAreaFallback.Primary);
 
                 if (displayArea != null)
                 {
@@ -109,10 +174,20 @@ namespace TopToolbar
                         appWindow.Move(new PointInt32(workArea.X, workArea.Y));
                         appWindow.Resize(new SizeInt32(workArea.Width, workArea.Height));
                     }
+
+                    var finalPos = appWindow.Position;
+                    var finalSize = appWindow.Size;
+                    AppLogger.LogInfo(
+                        $"TransparentOverlayHost: configured. fullscreen={fullscreen}, work=({workArea.X},{workArea.Y},{workArea.Width},{workArea.Height}), finalPos=({finalPos.X},{finalPos.Y}), finalSize=({finalSize.Width},{finalSize.Height})");
+                }
+                else
+                {
+                    AppLogger.LogWarning("TransparentOverlayHost: unable to resolve display area.");
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                AppLogger.LogWarning($"TransparentOverlayHost: configure failed - {ex.Message}");
             }
         }
 

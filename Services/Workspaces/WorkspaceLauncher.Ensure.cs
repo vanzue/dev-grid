@@ -266,6 +266,13 @@ namespace TopToolbar.Services.Workspaces
             {
                 LogPerf($"WorkspaceRuntime: [{appLabel}] LaunchNew - begin");
 
+                if (app.Minimized)
+                {
+                    sw.Stop();
+                    LogPerf($"WorkspaceRuntime: [{appLabel}] LaunchNew - skipped because app is snapshotted as minimized and no existing window was found");
+                    return new EnsureAppResult(true, app, IntPtr.Zero, false);
+                }
+
                 if (HasMatchingCurrentDesktopWindowForApp(app))
                 {
                     sw.Stop();

@@ -71,7 +71,6 @@ namespace TopToolbar
                 StopMonitoring();
                 HideToolbar();
                 ToolbarContainer.Visibility = Visibility.Collapsed;
-                NotificationHost.Visibility = Visibility.Collapsed;
                 EnsureRadialHotKey();
                 StartRadialHotKeyFallbackPolling();
                 return;
@@ -80,7 +79,6 @@ namespace TopToolbar
             HideRadialMenu();
             UnregisterRadialHotKey();
             ToolbarContainer.Visibility = Visibility.Visible;
-            NotificationHost.Visibility = Visibility.Visible;
             StartMonitoring();
         }
 
@@ -271,7 +269,6 @@ namespace TopToolbar
 
                     RadialCanvas.Visibility = Visibility.Visible;
                     ToolbarContainer.Visibility = Visibility.Collapsed;
-                    NotificationHost.Visibility = Visibility.Collapsed;
                     RootGrid.Focus(FocusState.Programmatic);
                 }).ConfigureAwait(false);
             }
@@ -364,7 +361,7 @@ namespace TopToolbar
                 {
                     Name = "Snapshot",
                     IconType = ToolbarIconType.Catalog,
-                    IconGlyph = "\uE114",
+                    IconGlyph = "\uE722",
                 },
             });
 

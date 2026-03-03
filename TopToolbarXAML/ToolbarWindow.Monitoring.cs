@@ -86,12 +86,14 @@ namespace TopToolbar
             AppWindow.Move(new Windows.Graphics.PointInt32(x, y));
             AppWindow.Show(false); // show without activation
             MakeTopMost();
+            UpdateToastWindowAnchor();
         }
 
         private void HideToolbar(bool initial = false)
         {
             _isVisible = false;
             AppWindow.Hide();
+            UpdateToastWindowAnchor();
         }
 
         [DllImport("user32.dll")]

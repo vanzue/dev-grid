@@ -10,6 +10,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using TopToolbar.Actions;
+using TopToolbar.Logging;
 using TopToolbar.Models;
 using TopToolbar.Providers;
 using TopToolbar.Services;
@@ -22,6 +23,9 @@ namespace TopToolbar
     public sealed partial class ToolbarWindow : WindowEx, IDisposable
     {
         private const int TriggerZoneHeight = 2;
+        private const string WorkspaceProviderId = "WorkspaceProvider";
+        private const string WorkspaceLaunchActionPrefix = "workspace.launch:";
+        private const string WorkspaceButtonIdPrefix = "workspace::";
         private readonly ToolbarConfigService _configService;
         private readonly ActionProviderRuntime _providerRuntime;
         private readonly ActionProviderService _providerService;
@@ -30,6 +34,7 @@ namespace TopToolbar
         private readonly BuiltinProvider _builtinProvider;
         private readonly ToolbarViewModel _vm;
         private readonly NotificationService _notificationService;
+        private readonly ToastWindow _toastWindow;
 
         private readonly TopToolbar.Stores.ToolbarStore _store = new();
         public ToolbarItemsViewModel ItemsViewModel { get; }
@@ -59,6 +64,7 @@ namespace TopToolbar
             _providerRuntime = new ActionProviderRuntime();
             _providerService = new ActionProviderService(_providerRuntime);
             _notificationService = new NotificationService(DispatcherQueue);
+            _toastWindow = new ToastWindow(_notificationService);
             _actionExecutor = new ToolbarActionExecutor(_providerService, _contextFactory, DispatcherQueue, _notificationService);
             _builtinProvider = new BuiltinProvider();
             _vm = new ToolbarViewModel(_configService, _providerService, _contextFactory);
@@ -125,7 +131,7 @@ namespace TopToolbar
                 }
             };
 
-            Title = "Workspace Center";
+            Title = "Dev Grid";
 
             // Make window background completely transparent
             this.SystemBackdrop = new WinUIEx.TransparentTintBackdrop(
@@ -199,6 +205,14 @@ namespace TopToolbar
             {
             }
 
+            try
+            {
+                _toastWindow?.Dispose();
+            }
+            catch
+            {
+            }
+
             GC.SuppressFinalize(this);
         }
 
@@ -218,7 +232,24 @@ namespace TopToolbar
             AppWindow.Hide();
             _isVisible = false;
             ApplyDisplayMode(_currentDisplayMode);
+            SyncToastWindowTheme();
+            UpdateToastWindowAnchor();
             _initializedLayout = true;
+        }
+
+        private void SyncToastWindowTheme()
+        {
+            _toastWindow?.ApplyToolbarThemeResources(RootGrid?.Resources);
+        }
+
+        private void UpdateToastWindowAnchor()
+        {
+            if (_toastWindow == null)
+            {
+                return;
+            }
+
+            _toastWindow.UpdateAnchor(AppWindow.Position, AppWindow.Size, _isVisible);
         }
 
         private async void OnToolbarButtonClick(object sender, RoutedEventArgs e)
@@ -239,7 +270,108 @@ namespace TopToolbar
         private void OnToolbarButtonRightTapped(object sender, RightTappedRoutedEventArgs e)
         {
             e.Handled = true;
+
+            if (sender is FrameworkElement target &&
+                target.Tag is ToolbarButtonItem item &&
+                TryGetRuntimeWorkspaceId(item, out var workspaceId))
+            {
+                ShowRuntimeWorkspaceMenu(target, workspaceId, item.Button?.DisplayName);
+                return;
+            }
+
             OpenSettingsWindow();
+        }
+
+        private void ShowRuntimeWorkspaceMenu(
+            FrameworkElement target,
+            string workspaceId,
+            string workspaceName)
+        {
+            var flyout = new MenuFlyout();
+            var removeItem = new MenuFlyoutItem
+            {
+                Text = "Remove workspace",
+                Icon = new FontIcon { Glyph = "\uE74D" },
+            };
+
+            removeItem.Click += async (_, __) =>
+            {
+                await RemoveRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
+            };
+
+            flyout.Items.Add(removeItem);
+            flyout.ShowAt(target);
+        }
+
+        private static bool TryGetRuntimeWorkspaceId(ToolbarButtonItem item, out string workspaceId)
+        {
+            workspaceId = string.Empty;
+            if (item?.Button == null)
+            {
+                return false;
+            }
+
+            var action = item.Button.Action;
+            if (action != null &&
+                action.Type == ToolbarActionType.Provider &&
+                string.Equals(action.ProviderId, WorkspaceProviderId, StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(action.ProviderActionId) &&
+                action.ProviderActionId.StartsWith(WorkspaceLaunchActionPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                workspaceId = action.ProviderActionId.Substring(WorkspaceLaunchActionPrefix.Length).Trim();
+            }
+
+            if (string.IsNullOrWhiteSpace(workspaceId))
+            {
+                var buttonId = item.Button.Id?.Trim() ?? string.Empty;
+                if (buttonId.StartsWith(WorkspaceButtonIdPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    workspaceId = buttonId.Substring(WorkspaceButtonIdPrefix.Length).Trim();
+                }
+            }
+
+            return !string.IsNullOrWhiteSpace(workspaceId);
+        }
+
+        private async System.Threading.Tasks.Task RemoveRuntimeWorkspaceAsync(
+            string workspaceId,
+            string workspaceName)
+        {
+            var normalizedWorkspaceId = workspaceId?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedWorkspaceId))
+            {
+                return;
+            }
+
+            try
+            {
+                if (!_providerRuntime.TryGetProvider(WorkspaceProviderId, out var provider) ||
+                    provider is not WorkspaceProvider workspaceProvider)
+                {
+                    _notificationService.ShowError("Workspace provider is unavailable.");
+                    return;
+                }
+
+                var removed = await workspaceProvider.DeleteWorkspaceAsync(normalizedWorkspaceId, CancellationToken.None)
+                    .ConfigureAwait(true);
+                if (!removed)
+                {
+                    _notificationService.ShowInfo("Workspace was already removed.");
+                    return;
+                }
+
+                await RefreshDynamicProviderGroupsAsync(CancellationToken.None).ConfigureAwait(true);
+                await EnsureQuickTemplatesLoadedAsync(forceReload: true).ConfigureAwait(true);
+
+                var label = string.IsNullOrWhiteSpace(workspaceName)
+                    ? normalizedWorkspaceId
+                    : workspaceName.Trim();
+                _notificationService.ShowSuccess($"Removed workspace '{label}'.");
+            }
+            catch (Exception ex)
+            {
+                _notificationService.ShowError("Failed to remove workspace: " + ex.Message);
+            }
         }
 
         private async void OnSnapshotClick(object sender, RoutedEventArgs e)
@@ -247,6 +379,16 @@ namespace TopToolbar
             if (sender is Button btn)
             {
                 await HandleSnapshotButtonClickAsync(btn).ConfigureAwait(true);
+            }
+        }
+
+        private async void OnQuickSnapshotClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn)
+            {
+                AppLogger.LogInfo(
+                    $"UI.Click: SnapshotButton clicked. enabled={btn.IsEnabled}, loaded={btn.IsLoaded}, snapshotInProgress={_snapshotInProgress}");
+                await HandleQuickSnapshotAsync(btn).ConfigureAwait(true);
             }
         }
 

@@ -10,6 +10,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using TopToolbar.Logging;
@@ -510,6 +511,7 @@ namespace TopToolbar
                     xamlRoot,
                     "Template created",
                     $"Template '{normalizedTemplateName}' was created. Use Configure templates to customize it.");
+                await RefreshTemplateListForPageAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
             {
@@ -549,6 +551,108 @@ namespace TopToolbar
             }))
             {
                 tcs.TrySetResult(true);
+            }
+
+            return tcs.Task;
+        }
+
+        private Task EnsureUiThreadAsync(DispatcherQueue dispatcherQueue = null)
+        {
+            var queue = dispatcherQueue
+                ?? (Content as FrameworkElement)?.DispatcherQueue
+                ?? DispatcherQueue;
+
+            if (queue == null || queue.HasThreadAccess)
+            {
+                return Task.CompletedTask;
+            }
+
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!queue.TryEnqueue(() => tcs.TrySetResult(true)))
+            {
+                tcs.TrySetResult(true);
+            }
+
+            return tcs.Task;
+        }
+
+        private Task RunOnUiThreadAsync(Func<Task> action, DispatcherQueue dispatcherQueue = null)
+        {
+            if (action == null)
+            {
+                return Task.CompletedTask;
+            }
+
+            var queue = dispatcherQueue
+                ?? (Content as FrameworkElement)?.DispatcherQueue
+                ?? DispatcherQueue;
+            if (queue == null || queue.HasThreadAccess)
+            {
+                return action();
+            }
+
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!queue.TryEnqueue(async () =>
+            {
+                var previous = SynchronizationContext.Current;
+                try
+                {
+                    SynchronizationContext.SetSynchronizationContext(new DispatcherQueueSynchronizationContext(queue));
+                    await action().ConfigureAwait(true);
+                    tcs.TrySetResult(true);
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
+                }
+                finally
+                {
+                    SynchronizationContext.SetSynchronizationContext(previous);
+                }
+            }))
+            {
+                tcs.TrySetException(new InvalidOperationException("Failed to enqueue UI work."));
+            }
+
+            return tcs.Task;
+        }
+
+        private Task<T> RunOnUiThreadAsync<T>(Func<Task<T>> action, DispatcherQueue dispatcherQueue = null)
+        {
+            if (action == null)
+            {
+                return Task.FromResult(default(T));
+            }
+
+            var queue = dispatcherQueue
+                ?? (Content as FrameworkElement)?.DispatcherQueue
+                ?? DispatcherQueue;
+            if (queue == null || queue.HasThreadAccess)
+            {
+                return action();
+            }
+
+            var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!queue.TryEnqueue(async () =>
+            {
+                var previous = SynchronizationContext.Current;
+                try
+                {
+                    SynchronizationContext.SetSynchronizationContext(new DispatcherQueueSynchronizationContext(queue));
+                    var result = await action().ConfigureAwait(true);
+                    tcs.TrySetResult(result);
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
+                }
+                finally
+                {
+                    SynchronizationContext.SetSynchronizationContext(previous);
+                }
+            }))
+            {
+                tcs.TrySetException(new InvalidOperationException("Failed to enqueue UI work."));
             }
 
             return tcs.Task;
@@ -647,6 +751,78 @@ namespace TopToolbar
             };
         }
 
+        private async Task RefreshTemplateListForPageAsync()
+        {
+            if (_disposed || _isClosed || Content is not FrameworkElement root || TemplatesList == null)
+            {
+                return;
+            }
+
+            var xamlRoot = root.XamlRoot;
+            var dispatcher = root.DispatcherQueue ?? DispatcherQueue;
+            try
+            {
+                using var orchestrator = new WorkspaceTemplateOrchestrator();
+                var templates = await orchestrator.ListTemplatesAsync(CancellationToken.None).ConfigureAwait(true);
+                var choices = templates
+                    .Where(template => template != null)
+                    .Select(template => new TemplateChoice(
+                        template.Name,
+                        string.IsNullOrWhiteSpace(template.DisplayName) ? template.Name : template.DisplayName,
+                        template.Description ?? string.Empty,
+                        template.Windows?.Count ?? 0))
+                    .OrderBy(template => template.DisplayName, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                await RunOnUiThreadAsync(() =>
+                {
+                    var previousSelection = TemplatesList.SelectedItem as TemplateChoice;
+                    TemplatesList.ItemsSource = choices;
+                    TemplatesList.SelectedItem = choices.FirstOrDefault(choice =>
+                        previousSelection != null &&
+                        string.Equals(choice.Name, previousSelection.Name, StringComparison.OrdinalIgnoreCase))
+                        ?? choices.FirstOrDefault();
+                    UpdateTemplatePageSelectionState();
+                    return Task.CompletedTask;
+                }, dispatcher).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("SettingsWindow: failed to refresh template list.", ex);
+                await ShowSimpleMessageOnUiThreadAsync(xamlRoot, "Template list failed", BuildExceptionDisplayMessage(ex));
+            }
+        }
+
+        private TemplateChoice GetSelectedTemplateChoice()
+        {
+            return TemplatesList?.SelectedItem as TemplateChoice;
+        }
+
+        private void UpdateTemplatePageSelectionState()
+        {
+            var hasSelection = GetSelectedTemplateChoice() != null;
+            if (ConfigureSelectedTemplateButton != null)
+            {
+                ConfigureSelectedTemplateButton.IsEnabled = hasSelection;
+            }
+
+            if (DeleteSelectedTemplateButton != null)
+            {
+                DeleteSelectedTemplateButton.IsEnabled = hasSelection;
+            }
+
+            if (TemplatesEmptyText != null)
+            {
+                var hasItems = TemplatesList?.Items?.Count > 0;
+                TemplatesEmptyText.Visibility = hasItems ? Visibility.Collapsed : Visibility.Visible;
+            }
+        }
+
+        private void OnTemplatesListSelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdateTemplatePageSelectionState();
+        }
+
         private async void OnManageWorkspaceTemplates(object sender, RoutedEventArgs e)
         {
             if (_disposed || _isClosed || Content is not FrameworkElement root)
@@ -655,103 +831,54 @@ namespace TopToolbar
             }
 
             var xamlRoot = root.XamlRoot;
+            var selected = GetSelectedTemplateChoice();
+            if (selected == null)
+            {
+                await ShowSimpleMessageOnUiThreadAsync(xamlRoot, "No template selected", "Select a template from the list first.");
+                return;
+            }
+
             try
             {
                 using var orchestrator = new WorkspaceTemplateOrchestrator();
-                var templates = await orchestrator.ListTemplatesAsync(CancellationToken.None).ConfigureAwait(true);
-                var choices = new System.Collections.ObjectModel.ObservableCollection<TemplateChoice>(templates
-                    .Where(template => template != null)
-                    .Select(template => new TemplateChoice(
-                        template.Name,
-                        string.IsNullOrWhiteSpace(template.DisplayName) ? template.Name : template.DisplayName,
-                        template.Description ?? string.Empty,
-                        template.Windows?.Count ?? 0))
-                    .OrderBy(template => template.DisplayName, StringComparer.OrdinalIgnoreCase)
-                    .ToList());
-
-                if (choices.Count == 0)
+                var template = await orchestrator.GetTemplateAsync(selected.Name, CancellationToken.None).ConfigureAwait(true);
+                if (template == null)
                 {
-                    await ShowSimpleMessageOnUiThreadAsync(xamlRoot, "No templates", "No workspace templates were found. Use 'Create template' first.");
+                    await RefreshTemplateListForPageAsync().ConfigureAwait(true);
+                    await ShowSimpleMessageOnUiThreadAsync(xamlRoot, "Template missing", $"Template '{selected.Name}' no longer exists.");
                     return;
                 }
 
-                var templateList = new ListView
+                var saved = await ShowTemplateDesignerAsync(xamlRoot, template, orchestrator).ConfigureAwait(true);
+                if (saved)
                 {
-                    ItemsSource = choices,
-                    DisplayMemberPath = nameof(TemplateChoice.DisplayName),
-                    SelectionMode = ListViewSelectionMode.Single,
-                    MinWidth = 360,
-                    MinHeight = 180,
-                    MaxHeight = 260,
-                };
-                var summary = new TextBlock { TextWrapping = TextWrapping.Wrap };
-
-                void UpdateSummary()
-                {
-                    if (templateList.SelectedItem is not TemplateChoice selected)
-                    {
-                        summary.Text = string.Empty;
-                        return;
-                    }
-
-                    var description = string.IsNullOrWhiteSpace(selected.Description) ? "-" : selected.Description;
-                    summary.Text =
-                        $"Name: {selected.Name}\n"
-                        + $"Display: {selected.DisplayName}\n"
-                        + $"Windows: {selected.WindowCount}\n"
-                        + $"Description: {description}";
+                    await RefreshTemplateListForPageAsync().ConfigureAwait(true);
                 }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("SettingsWindow: template management failed.", ex);
+                await ShowSimpleMessageOnUiThreadAsync(xamlRoot, "Template management failed", BuildExceptionDisplayMessage(ex));
+            }
+        }
 
-                UpdateSummary();
-                templateList.SelectionChanged += (_, __) => UpdateSummary();
+        private async void OnDeleteSelectedTemplate(object sender, RoutedEventArgs e)
+        {
+            if (_disposed || _isClosed || Content is not FrameworkElement root)
+            {
+                return;
+            }
 
-                var content = new StackPanel { Spacing = 10 };
-                content.Children.Add(new TextBlock
-                {
-                    Text = "Select a template to configure.",
-                    TextWrapping = TextWrapping.Wrap,
-                });
-                content.Children.Add(templateList);
-                content.Children.Add(summary);
+            var xamlRoot = root.XamlRoot;
+            var selected = GetSelectedTemplateChoice();
+            if (selected == null)
+            {
+                await ShowSimpleMessageOnUiThreadAsync(xamlRoot, "No template selected", "Select a template from the list first.");
+                return;
+            }
 
-                templateList.SelectedIndex = 0;
-
-                var dialog = new ContentDialog
-                {
-                    XamlRoot = xamlRoot,
-                    Title = "Configure templates",
-                    PrimaryButtonText = "Configure",
-                    SecondaryButtonText = "Delete template",
-                    CloseButtonText = "Close",
-                    DefaultButton = ContentDialogButton.Primary,
-                    Content = content,
-                };
-
-                var result = await dialog.ShowAsync();
-                if (result == ContentDialogResult.None)
-                {
-                    return;
-                }
-
-                var selected = templateList.SelectedItem as TemplateChoice;
-                if (selected == null)
-                {
-                    return;
-                }
-
-                if (result == ContentDialogResult.Primary)
-                {
-                    var template = await orchestrator.GetTemplateAsync(selected.Name, CancellationToken.None).ConfigureAwait(true);
-                    if (template == null)
-                    {
-                        await ShowSimpleMessageOnUiThreadAsync(xamlRoot, "Template missing", $"Template '{selected.Name}' no longer exists.");
-                        return;
-                    }
-
-                    _ = await ShowTemplateDesignerAsync(xamlRoot, template, orchestrator).ConfigureAwait(true);
-                    return;
-                }
-
+            try
+            {
                 var confirmDialog = new ContentDialog
                 {
                     XamlRoot = xamlRoot,
@@ -772,6 +899,7 @@ namespace TopToolbar
                     return;
                 }
 
+                using var orchestrator = new WorkspaceTemplateOrchestrator();
                 var deleted = await orchestrator.DeleteTemplateAsync(selected.Name, CancellationToken.None).ConfigureAwait(true);
                 if (!deleted)
                 {
@@ -780,18 +908,12 @@ namespace TopToolbar
                 }
 
                 await ShowSimpleMessageOnUiThreadAsync(xamlRoot, "Template deleted", $"Template '{selected.Name}' was deleted.");
+                await RefreshTemplateListForPageAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
             {
-                AppLogger.LogError("SettingsWindow: template management failed.", ex);
-                try
-                {
-                    await ShowSimpleMessageOnUiThreadAsync(xamlRoot, "Template management failed", BuildExceptionDisplayMessage(ex));
-                }
-                catch (Exception displayEx)
-                {
-                    AppLogger.LogError("SettingsWindow: failed to display template management error.", displayEx);
-                }
+                AppLogger.LogError("SettingsWindow: delete template failed.", ex);
+                await ShowSimpleMessageOnUiThreadAsync(xamlRoot, "Delete failed", BuildExceptionDisplayMessage(ex));
             }
         }
 

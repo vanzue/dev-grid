@@ -296,6 +296,70 @@ namespace TopToolbar.Providers
             return workspace;
         }
 
+        internal async Task<bool> DeleteWorkspaceAsync(string workspaceId, CancellationToken cancellationToken)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, nameof(WorkspaceProvider));
+
+            var normalizedWorkspaceId = workspaceId?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedWorkspaceId))
+            {
+                return false;
+            }
+
+            bool definitionRemoved = false;
+            bool buttonRemoved = false;
+            Exception definitionError = null;
+            Exception buttonError = null;
+
+            try
+            {
+                definitionRemoved = await _definitionStore.DeleteWorkspaceAsync(normalizedWorkspaceId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                definitionError = ex;
+                AppLogger.LogWarning($"WorkspaceProvider: failed to delete workspace definition '{normalizedWorkspaceId}' - {ex.Message}");
+            }
+
+            try
+            {
+                buttonRemoved = await _buttonStore.RemoveWorkspaceButtonAsync(normalizedWorkspaceId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                buttonError = ex;
+                AppLogger.LogWarning($"WorkspaceProvider: failed to delete workspace button '{normalizedWorkspaceId}' - {ex.Message}");
+            }
+
+            if (!definitionRemoved && !buttonRemoved)
+            {
+                if (definitionError != null)
+                {
+                    throw definitionError;
+                }
+
+                if (buttonError != null)
+                {
+                    throw buttonError;
+                }
+
+                return false;
+            }
+
+            try
+            {
+                await ReloadIfChangedAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"WorkspaceProvider: failed to refresh workspace cache after delete '{normalizedWorkspaceId}' - {ex.Message}");
+            }
+
+            return true;
+        }
+
         public string Id => "WorkspaceProvider";
 
         public Task<ProviderInfo> GetInfoAsync(CancellationToken cancellationToken)

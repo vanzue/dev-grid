@@ -180,12 +180,18 @@ namespace TopToolbar.Services.Workspaces
                 swPhase1.Stop();
                 result.StageDurationsMs["claimLaunch"] = swPhase1.ElapsedMilliseconds;
                 
-                var successfulApps = allResults.Where(r => r.Success).ToList();
+                var minimizedMissingCount = allResults.Count(r =>
+                    r.Success
+                    && r.Handle == IntPtr.Zero
+                    && r.App?.Minimized == true);
+                var successfulApps = allResults
+                    .Where(r => r.Success && r.Handle != IntPtr.Zero)
+                    .ToList();
                 result.ClaimedCount = successfulApps.Count(r => !r.LaunchedNew);
                 result.LaunchedCount = successfulApps.Count(r => r.LaunchedNew);
-                LogPerf($"WorkspaceRuntime: Phase 1 done in {swPhase1.ElapsedMilliseconds} ms - {successfulApps.Count}/{appCount} apps ready");
+                LogPerf($"WorkspaceRuntime: Phase 1 done in {swPhase1.ElapsedMilliseconds} ms - {successfulApps.Count}/{appCount} apps ready, minimized-missing={minimizedMissingCount}");
 
-                if (successfulApps.Count == 0)
+                if (successfulApps.Count == 0 && minimizedMissingCount == 0)
                 {
                     result.Errors.Add("launch-timeout: no windows were assigned or launched.");
                     return FinalizeResult(false);
@@ -233,17 +239,26 @@ namespace TopToolbar.Services.Workspaces
                 // Phase 4: Focus target window using role priority with fallback.
                 // ============================================================
                 var swPhase4 = Stopwatch.StartNew();
-                var focus = await ApplyFocusPolicyAsync(workspace, successfulApps, cancellationToken).ConfigureAwait(false);
-                swPhase4.Stop();
-                result.StageDurationsMs["focus"] = swPhase4.ElapsedMilliseconds;
-                if (focus.Success)
+                if (successfulApps.Count > 0)
                 {
-                    result.FocusedRole = focus.Role;
-                    result.FocusedHwnd = ToWindowHandleString(focus.Handle);
+                    var focus = await ApplyFocusPolicyAsync(workspace, successfulApps, cancellationToken).ConfigureAwait(false);
+                    swPhase4.Stop();
+                    result.StageDurationsMs["focus"] = swPhase4.ElapsedMilliseconds;
+                    if (focus.Success)
+                    {
+                        result.FocusedRole = focus.Role;
+                        result.FocusedHwnd = ToWindowHandleString(focus.Handle);
+                    }
+                    else
+                    {
+                        result.Errors.Add($"focus-failed: {focus.Error}");
+                    }
                 }
                 else
                 {
-                    result.Errors.Add($"focus-failed: {focus.Error}");
+                    swPhase4.Stop();
+                    result.StageDurationsMs["focus"] = swPhase4.ElapsedMilliseconds;
+                    LogPerf("WorkspaceRuntime: Phase 4 - skipped focus because all matching apps are minimized/missing.");
                 }
 
                 await TryUpdateLastLaunchedTimeAsync(workspace, cancellationToken).ConfigureAwait(false);

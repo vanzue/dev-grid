@@ -77,6 +77,7 @@ namespace TopToolbar
             }
 
             ApplyThemeToLiveToolbarElements(tokens, iconColor);
+            SyncToastWindowTheme();
         }
 
         private void EnsureAccentPair(ToolbarTheme theme, ThemeTokens tokens)

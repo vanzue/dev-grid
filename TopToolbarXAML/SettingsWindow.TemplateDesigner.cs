@@ -21,6 +21,13 @@ namespace TopToolbar
             TopToolbar.Services.Workspaces.TemplateDefinition template,
             TopToolbar.Services.Workspaces.WorkspaceTemplateOrchestrator orchestrator)
         {
+            if (DispatcherQueue != null && !DispatcherQueue.HasThreadAccess)
+            {
+                return await RunOnUiThreadAsync(
+                    () => ShowTemplateDesignerAsync(xamlRoot, template, orchestrator),
+                    DispatcherQueue).ConfigureAwait(true);
+            }
+
             if (xamlRoot == null || template == null || orchestrator == null)
             {
                 return false;
@@ -74,9 +81,18 @@ namespace TopToolbar
                 SelectedItem = string.IsNullOrWhiteSpace(working.Layout.Strategy) ? "single" : working.Layout.Strategy,
                 MinWidth = 240,
             };
-            var monitorPolicyBox = new TextBox
+            var monitorPolicyOptions = new List<string> { "primary", "any", "current" };
+            var currentMonitorPolicy = string.IsNullOrWhiteSpace(working.Layout.MonitorPolicy) ? "primary" : working.Layout.MonitorPolicy;
+            if (!monitorPolicyOptions.Contains(currentMonitorPolicy, StringComparer.OrdinalIgnoreCase))
             {
-                Text = string.IsNullOrWhiteSpace(working.Layout.MonitorPolicy) ? "primary" : working.Layout.MonitorPolicy,
+                monitorPolicyOptions.Add(currentMonitorPolicy);
+            }
+
+            var monitorPolicyPicker = new ComboBox
+            {
+                ItemsSource = monitorPolicyOptions,
+                SelectedItem = monitorPolicyOptions.FirstOrDefault(option =>
+                    string.Equals(option, currentMonitorPolicy, StringComparison.OrdinalIgnoreCase)) ?? "primary",
                 MinWidth = 240,
             };
             var focusPriorityBox = new TextBox
@@ -142,7 +158,7 @@ namespace TopToolbar
             content.Children.Add(new TextBlock { Text = "Layout strategy" });
             content.Children.Add(strategyPicker);
             content.Children.Add(new TextBlock { Text = "Monitor policy" });
-            content.Children.Add(monitorPolicyBox);
+            content.Children.Add(monitorPolicyPicker);
             content.Children.Add(new TextBlock { Text = "Focus priority (comma separated roles)" });
             content.Children.Add(focusPriorityBox);
 
@@ -285,7 +301,7 @@ namespace TopToolbar
                 candidate.DefaultRepoRoot = defaultRepoBox.Text?.Trim() ?? string.Empty;
                 candidate.Layout ??= new TopToolbar.Services.Workspaces.TemplateLayoutDefinition();
                 candidate.Layout.Strategy = strategyPicker.SelectedItem as string ?? strategyPicker.Text ?? "single";
-                candidate.Layout.MonitorPolicy = monitorPolicyBox.Text?.Trim() ?? "primary";
+                candidate.Layout.MonitorPolicy = monitorPolicyPicker.SelectedItem as string ?? "primary";
                 candidate.Layout.Preset = candidate.Layout.Strategy;
                 candidate.Windows = appRows.Select(CloneTemplateWindowDefinition).ToList();
                 candidate.Layout.Slots = slotRows.Select(CloneTemplateLayoutSlotDefinition).ToList();
@@ -463,7 +479,7 @@ namespace TopToolbar
             descriptionBox.TextChanged += (_, __) => UpdateValidationState(designerDialog);
             defaultRepoBox.TextChanged += (_, __) => UpdateValidationState(designerDialog);
             focusPriorityBox.TextChanged += (_, __) => UpdateValidationState(designerDialog);
-            monitorPolicyBox.TextChanged += (_, __) => UpdateValidationState(designerDialog);
+            monitorPolicyPicker.SelectionChanged += (_, __) => UpdateValidationState(designerDialog);
             strategyPicker.SelectionChanged += (_, __) => UpdateValidationState(designerDialog);
             requiresRepoToggle.Toggled += (_, __) => UpdateValidationState(designerDialog);
 

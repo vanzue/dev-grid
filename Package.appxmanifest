@@ -15,8 +15,8 @@
       Version="1.0.0.0" />
 
   <Properties>
-    <DisplayName>Top Toolbar</DisplayName>
-    <PublisherDisplayName>TopToolbar</PublisherDisplayName>
+    <DisplayName>Dev Grid</DisplayName>
+    <PublisherDisplayName>Dev Grid</PublisherDisplayName>
     <Logo>Assets/Logos/StoreLogo.png</Logo>
   </Properties>
 
@@ -34,8 +34,8 @@
                  Executable="$targetnametoken$.exe"
                  EntryPoint="$targetentrypoint$">
       <uap:VisualElements
-        DisplayName="Top Toolbar"
-        Description="TopToolbar desktop toolbar"
+        DisplayName="Dev Grid"
+        Description="Dev Grid desktop workspace center"
         Square150x150Logo="Assets/Logos/Square150x150Logo.png"
         Square44x44Logo="Assets/Logos/Square44x44Logo.png"
         BackgroundColor="transparent">
@@ -43,11 +43,11 @@
       </uap:VisualElements>
       <Extensions>
         <desktop:Extension Category="windows.startupTask" Executable="TopToolbar.exe" EntryPoint="Windows.FullTrustApplication">
-          <desktop:StartupTask TaskId="TopToolbarStartup" Enabled="false" DisplayName="Top Toolbar" />
+          <desktop:StartupTask TaskId="TopToolbarStartup" Enabled="false" DisplayName="Dev Grid" />
         </desktop:Extension>
         <com:Extension Category="windows.comServer">
           <com:ComServer>
-            <com:SurrogateServer DisplayName="TopToolbar Context Menu">
+            <com:SurrogateServer DisplayName="Dev Grid Context Menu">
               <com:Class Id="3B8F00F1-1335-4D86-9EAF-C75857D53599" Path="TopToolbar.ContextMenu.comhost.dll" ThreadingModel="STA" />
             </com:SurrogateServer>
           </com:ComServer>

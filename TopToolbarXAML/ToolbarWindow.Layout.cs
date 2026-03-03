@@ -68,6 +68,7 @@ namespace TopToolbar
 
                 this.AppWindow.Resize(new Windows.Graphics.SizeInt32(widthPx, heightPx));
                 _topBarTriggerWidth = Math.Max(widthPx, TriggerWindowMinWidth);
+                UpdateToastWindowAnchor();
             }
             catch (Exception ex)
             {
@@ -85,6 +86,7 @@ namespace TopToolbar
             int x = workArea.X + ((workArea.Width - width) / 2);
             int y = workArea.Y - height; // hidden above top
             this.AppWindow.Move(new Windows.Graphics.PointInt32(x, y));
+            UpdateToastWindowAnchor();
         }
     }
 }

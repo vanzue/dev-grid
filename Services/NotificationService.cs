@@ -24,9 +24,9 @@ namespace TopToolbar.Services
 
         public int MaxVisible { get; set; } = 3;
 
-        public TimeSpan DefaultDuration { get; set; } = TimeSpan.FromSeconds(4);
+        public TimeSpan DefaultDuration { get; set; } = TimeSpan.FromSeconds(7);
 
-        public TimeSpan SuccessDuration { get; set; } = TimeSpan.FromSeconds(1);
+        public TimeSpan SuccessDuration { get; set; } = TimeSpan.FromSeconds(4);
 
         public void ShowError(string message) => Show(NotificationKind.Error, message, DefaultDuration);
 

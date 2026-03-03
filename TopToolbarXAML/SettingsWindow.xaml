@@ -15,7 +15,7 @@
     Height="720"
     MinWidth="960"
     MinHeight="640"
-    Title="Workspace Center Settings">
+    Title="Dev Grid Settings">
     <Grid x:Name="LayoutRoot" Background="Transparent">
         <Grid.Resources>
             <conv:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
@@ -236,7 +236,7 @@
                 </Border>
                 <StackPanel Spacing="0"
                         VerticalAlignment="Center">
-                    <TextBlock Text="Workspace Center Settings"
+                    <TextBlock Text="Dev Grid Settings"
                             FontSize="14"
                             FontWeight="Normal"/>
                 </StackPanel>
@@ -525,7 +525,7 @@
                                         <TextBlock Text="Top bar appearance"
                                                    FontSize="13"
                                                    FontWeight="SemiBold"/>
-                                        <TextBlock Text="Choose how TopToolbar appears when invoked."
+                                        <TextBlock Text="Choose how Dev Grid appears when invoked."
                                                    Opacity="0.72"/>
                                     </StackPanel>
 
@@ -588,18 +588,70 @@
                                        FontSize="18"
                                        FontWeight="SemiBold"/>
 
-                            <tkcontrols:SettingsCard Header="Template management"
-                                                    Description="Create and configure templates used by New Workspace.">
-                                <StackPanel Orientation="Horizontal"
-                                            Spacing="8">
-                                    <Button Content="Create template"
-                                            HorizontalAlignment="Left"
-                                            Click="OnCreateWorkspaceTemplate"/>
-                                    <Button Content="Configure templates"
-                                            HorizontalAlignment="Left"
-                                            Click="OnManageWorkspaceTemplates"/>
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="8">
+                                <Button Content="Create template"
+                                        HorizontalAlignment="Left"
+                                        Click="OnCreateWorkspaceTemplate"/>
+                            </StackPanel>
+
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    Padding="16,14">
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="Template list"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"/>
+                                    <TextBlock Text="Select a template to configure or delete."
+                                               Opacity="0.72"/>
+
+                                    <ListView x:Name="TemplatesList"
+                                              SelectionMode="Single"
+                                              MinHeight="240"
+                                              MaxHeight="380"
+                                              SelectionChanged="OnTemplatesListSelectionChanged"
+                                              Margin="0,4,0,0">
+                                        <ListView.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Spacing="2" Padding="4,4,4,4">
+                                                    <TextBlock Text="{Binding DisplayName}"
+                                                               FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding Name}"
+                                                               Opacity="0.72"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding Description}"
+                                                               Opacity="0.62"
+                                                               TextWrapping="WrapWholeWords"
+                                                               MaxLines="2"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ListView.ItemTemplate>
+                                    </ListView>
+
+                                    <TextBlock x:Name="TemplatesEmptyText"
+                                               Text="No templates yet. Create one to get started."
+                                               Opacity="0.7"
+                                               Visibility="Collapsed"/>
+
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="8"
+                                                Margin="0,6,0,0">
+                                        <Button x:Name="ConfigureSelectedTemplateButton"
+                                                Content="Configure selected"
+                                                HorizontalAlignment="Left"
+                                                IsEnabled="False"
+                                                Click="OnManageWorkspaceTemplates"/>
+                                        <Button x:Name="DeleteSelectedTemplateButton"
+                                                Content="Delete selected"
+                                                HorizontalAlignment="Left"
+                                                IsEnabled="False"
+                                                Click="OnDeleteSelectedTemplate"/>
+                                    </StackPanel>
                                 </StackPanel>
-                            </tkcontrols:SettingsCard>
+                            </Border>
                         </StackPanel>
 
                         <!-- Editable group settings (user-created groups only) -->
@@ -714,7 +766,7 @@
                         <!-- Default groups (locked) -->
                         <StackPanel Spacing="16" Visibility="Collapsed">
                             <tkcontrols:SettingsCard Header="Legacy Actions"
-                                                    Description="Workspace Center mode disables legacy media/system controls.">
+                                                    Description="Dev Grid mode disables legacy media/system controls.">
                                 <TextBlock Text="This section is kept only for backward compatibility."
                                            TextWrapping="Wrap"/>
                             </tkcontrols:SettingsCard>
