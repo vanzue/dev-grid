@@ -596,6 +596,7 @@ namespace TopToolbar
             {
                 NotificationKind.Error => "\uEA39",
                 NotificationKind.Warning => "\uE7BA",
+                NotificationKind.Success => "\uE73E",
                 _ => "\uE783",
             };
 
@@ -619,17 +620,35 @@ namespace TopToolbar
                 VerticalAlignment = VerticalAlignment.Center,
             });
 
-            var icon = new FontIcon
+            FrameworkElement iconElement;
+            if (item.Kind == NotificationKind.Progress)
             {
-                Glyph = iconGlyph,
-                FontFamily = new FontFamily("Segoe MDL2 Assets"),
-                FontSize = 14,
-                Foreground = accentBrush,
-                Margin = new Thickness(10, 0, 10, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            Grid.SetColumn(icon, 1);
-            body.Children.Add(icon);
+                iconElement = new ProgressRing
+                {
+                    IsActive = true,
+                    IsIndeterminate = true,
+                    Width = 16,
+                    Height = 16,
+                    Foreground = accentBrush,
+                    Margin = new Thickness(10, 0, 10, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+            }
+            else
+            {
+                iconElement = new FontIcon
+                {
+                    Glyph = iconGlyph,
+                    FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                    FontSize = 14,
+                    Foreground = accentBrush,
+                    Margin = new Thickness(10, 0, 10, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+            }
+
+            Grid.SetColumn(iconElement, 1);
+            body.Children.Add(iconElement);
 
             var messageText = new TextBlock
             {
@@ -663,6 +682,7 @@ namespace TopToolbar
             {
                 NotificationKind.Error => new SolidColorBrush(Color.FromArgb(0xFF, 0xD1, 0x34, 0x38)),
                 NotificationKind.Warning => new SolidColorBrush(Color.FromArgb(0xFF, 0xE7, 0x9E, 0x3A)),
+                NotificationKind.Success => new SolidColorBrush(Color.FromArgb(0xFF, 0x2E, 0xA0, 0x43)),
                 _ => CloneBrush(_toastAccent) ?? new SolidColorBrush(Color.FromArgb(0xFF, 0x4F, 0x8A, 0xC9)),
             };
         }

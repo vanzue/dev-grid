@@ -8,6 +8,8 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -93,7 +95,14 @@ namespace TopToolbar.Logging
         {
             string caller = FormatCaller(memberName, sourceFilePath, sourceLineNumber);
             string payload = string.IsNullOrEmpty(message) ? caller : string.Concat(caller, " - ", message);
-            _logger.Log(level, 0, payload, exception, static (state, ex) => state);
+            try
+            {
+                _logger.Log(level, 0, payload, exception, static (state, ex) => state);
+            }
+            catch
+            {
+                // Logging must never terminate the app/CLI.
+            }
         }
 
         private static string PrepareLogDirectory(string logsRoot)
@@ -191,19 +200,26 @@ namespace TopToolbar.Logging
                     return;
                 }
 
-                string logFilePath = GetLogFilePath();
-                string timestamp = DateTime.Now.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
-                string line = string.Concat("[", timestamp, "] [", level.ToString(), "] [", categoryName, "] ", message ?? string.Empty);
-
-                if (exception != null)
+                try
                 {
-                    line = string.Concat(line, Environment.NewLine, exception.ToString());
+                    string logFilePath = GetLogFilePath();
+                    string timestamp = DateTime.Now.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
+                    string line = string.Concat("[", timestamp, "] [", level.ToString(), "] [", categoryName, "] ", message ?? string.Empty);
+
+                    if (exception != null)
+                    {
+                        line = string.Concat(line, Environment.NewLine, exception.ToString());
+                    }
+
+                    lock (_lock)
+                    {
+                        Directory.CreateDirectory(_directory);
+                        AppendLineWithRetry(logFilePath, line + Environment.NewLine);
+                    }
                 }
-
-                lock (_lock)
+                catch
                 {
-                    Directory.CreateDirectory(_directory);
-                    File.AppendAllText(logFilePath, line + Environment.NewLine);
+                    // Do not let logging failures break runtime behavior.
                 }
             }
 
@@ -211,6 +227,33 @@ namespace TopToolbar.Logging
             {
                 string fileName = "Log_" + DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".log";
                 return Path.Combine(_directory, fileName);
+            }
+
+            private static void AppendLineWithRetry(string filePath, string text)
+            {
+                var bytes = Encoding.UTF8.GetBytes(text ?? string.Empty);
+                const int maxAttempts = 3;
+                for (var attempt = 1; attempt <= maxAttempts; attempt++)
+                {
+                    try
+                    {
+                        using var stream = new FileStream(
+                            filePath,
+                            FileMode.Append,
+                            FileAccess.Write,
+                            FileShare.ReadWrite | FileShare.Delete);
+                        stream.Write(bytes, 0, bytes.Length);
+                        return;
+                    }
+                    catch (IOException) when (attempt < maxAttempts)
+                    {
+                        Thread.Sleep(attempt * 10);
+                    }
+                    catch (UnauthorizedAccessException) when (attempt < maxAttempts)
+                    {
+                        Thread.Sleep(attempt * 10);
+                    }
+                }
             }
 
             private sealed class FileLogger : ILogger

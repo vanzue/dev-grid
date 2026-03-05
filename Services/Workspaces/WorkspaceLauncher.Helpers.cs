@@ -16,6 +16,13 @@ namespace TopToolbar.Services.Workspaces
 {
     internal sealed partial class WorkspaceLauncher
     {
+        private enum DesktopAvailability
+        {
+            Current = 0,
+            Other = 1,
+            Unknown = 2,
+        }
+
         private static string DescribeApp(ApplicationDefinition app)
         {
             if (app == null)
@@ -124,9 +131,7 @@ namespace TopToolbar.Services.Workspaces
                 return basePlacement;
             }
 
-            var dstRect = !targetMonitor.DpiAwareRect.IsEmpty
-                ? targetMonitor.DpiAwareRect
-                : targetMonitor.DpiUnawareRect;
+            var dstRect = GetTargetMonitorRect(targetMonitor);
             if (dstRect.Width <= 0 || dstRect.Height <= 0)
             {
                 return basePlacement;
@@ -179,11 +184,21 @@ namespace TopToolbar.Services.Workspaces
                 return null;
             }
 
+            if (HasRect(monitor.DpiAwareWorkRect))
+            {
+                return monitor.DpiAwareWorkRect;
+            }
+
             if (monitor.DpiAwareRect != null
                 && monitor.DpiAwareRect.Width > 0
                 && monitor.DpiAwareRect.Height > 0)
             {
                 return monitor.DpiAwareRect;
+            }
+
+            if (HasRect(monitor.DpiUnawareWorkRect))
+            {
+                return monitor.DpiUnawareWorkRect;
             }
 
             if (monitor.DpiUnawareRect != null
@@ -194,6 +209,38 @@ namespace TopToolbar.Services.Workspaces
             }
 
             return null;
+        }
+
+        private static DisplayRect GetTargetMonitorRect(DisplayMonitor monitor)
+        {
+            if (monitor == null)
+            {
+                return default;
+            }
+
+            if (!monitor.DpiAwareWorkRect.IsEmpty)
+            {
+                return monitor.DpiAwareWorkRect;
+            }
+
+            if (!monitor.DpiAwareRect.IsEmpty)
+            {
+                return monitor.DpiAwareRect;
+            }
+
+            if (!monitor.DpiUnawareWorkRect.IsEmpty)
+            {
+                return monitor.DpiUnawareWorkRect;
+            }
+
+            return monitor.DpiUnawareRect;
+        }
+
+        private static bool HasRect(MonitorDefinition.MonitorRect rect)
+        {
+            return rect != null
+                && rect.Width > 0
+                && rect.Height > 0;
         }
 
         private async Task TryUpdateLastLaunchedTimeAsync(
@@ -225,37 +272,65 @@ namespace TopToolbar.Services.Workspaces
                 return false;
             }
 
-            if (NativeWindowHelper.TryIsWindowOnCurrentVirtualDesktop(handle, out var isOnCurrentDesktop))
-            {
-                return isOnCurrentDesktop;
-            }
-
-            return false;
+            var availability = GetDesktopAvailability(handle);
+            return availability == DesktopAvailability.Current;
         }
 
         private bool EnsureWindowOnCurrentDesktop(
             IntPtr handle,
             string appLabel,
-            string stage)
+            string stage,
+            bool allowUnknownDesktopState = false)
         {
             if (handle == IntPtr.Zero)
             {
                 return false;
             }
 
-            var querySucceeded = NativeWindowHelper.TryIsWindowOnCurrentVirtualDesktop(handle, out var isOnCurrentDesktop);
-            if (querySucceeded && isOnCurrentDesktop)
+            var availability = GetDesktopAvailability(handle);
+            if (availability == DesktopAvailability.Current)
             {
                 return true;
             }
 
-            if (!querySucceeded)
+            if (availability == DesktopAvailability.Unknown)
             {
-                LogPerf($"WorkspaceRuntime: [{appLabel}] {stage} - desktop query unavailable for handle={handle}; treating as off-desktop");
+                if (allowUnknownDesktopState)
+                {
+                    LogPerf($"WorkspaceRuntime: [{appLabel}] {stage} - desktop query unavailable for handle={handle}; allowing unknown desktop state");
+                    return true;
+                }
+
+                LogPerf($"WorkspaceRuntime: [{appLabel}] {stage} - desktop query unavailable for handle={handle}; treating as off-desktop for safety");
+                return false;
             }
 
             LogPerf($"WorkspaceRuntime: [{appLabel}] {stage} - window handle={handle} is not on current virtual desktop");
             return false;
+        }
+
+        private static DesktopAvailability GetDesktopAvailability(IntPtr handle)
+        {
+            if (handle == IntPtr.Zero)
+            {
+                return DesktopAvailability.Unknown;
+            }
+
+            try
+            {
+                if (!NativeWindowHelper.TryIsWindowOnCurrentVirtualDesktop(handle, out var isOnCurrentDesktop))
+                {
+                    return DesktopAvailability.Unknown;
+                }
+
+                return isOnCurrentDesktop
+                    ? DesktopAvailability.Current
+                    : DesktopAvailability.Other;
+            }
+            catch
+            {
+                return DesktopAvailability.Unknown;
+            }
         }
 
         private readonly record struct FocusCandidate(string Role, IntPtr Handle, string AppLabel);
@@ -273,6 +348,25 @@ namespace TopToolbar.Services.Workspaces
             var normalizedPriority = BuildFocusPriority(workspace, successfulApps);
             var candidates = new List<FocusCandidate>();
             var seenHandles = new HashSet<IntPtr>();
+
+            var focusedAppId = (workspace?.FocusedApplicationId ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(focusedAppId))
+            {
+                var preferred = FindFocusCandidateForAppId(successfulApps, focusedAppId, includeMinimized: false);
+                if (!preferred.HasValue || preferred.Value.Handle == IntPtr.Zero)
+                {
+                    preferred = FindFocusCandidateForAppId(successfulApps, focusedAppId, includeMinimized: true);
+                }
+
+                if (preferred.HasValue && preferred.Value.Handle != IntPtr.Zero && seenHandles.Add(preferred.Value.Handle))
+                {
+                    var preferredRole = NormalizeRole(preferred.Value.App?.Role);
+                    candidates.Add(new FocusCandidate(
+                        string.IsNullOrWhiteSpace(preferredRole) ? "snapshot-focus" : preferredRole,
+                        preferred.Value.Handle,
+                        DescribeApp(preferred.Value.App)));
+                }
+            }
 
             for (var i = 0; i < normalizedPriority.Count; i++)
             {
@@ -400,6 +494,33 @@ namespace TopToolbar.Services.Workspaces
                     NormalizeRole(current.App?.Role),
                     NormalizeRole(role),
                     StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (IsFocusableCandidate(current, includeMinimized))
+                {
+                    return current;
+                }
+            }
+
+            return null;
+        }
+
+        private static EnsureAppResult? FindFocusCandidateForAppId(
+            IReadOnlyList<EnsureAppResult> successfulApps,
+            string appId,
+            bool includeMinimized)
+        {
+            if (string.IsNullOrWhiteSpace(appId) || successfulApps == null)
+            {
+                return null;
+            }
+
+            for (var i = 0; i < successfulApps.Count; i++)
+            {
+                var current = successfulApps[i];
+                if (!string.Equals(current.App?.Id, appId, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }

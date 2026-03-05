@@ -35,6 +35,12 @@ namespace TopToolbar.Services.Workspaces
 
         [JsonPropertyName("windows")]
         public List<TemplateWindowDefinition> Windows { get; set; } = new();
+
+        [JsonPropertyName("agent")]
+        public TemplateAgentDefinition Agent { get; set; } = new();
+
+        [JsonPropertyName("creation")]
+        public TemplateCreationDefinition Creation { get; set; } = new();
     }
 
     internal sealed class TemplateLayoutDefinition
@@ -113,5 +119,29 @@ namespace TopToolbar.Services.Workspaces
 
         [JsonPropertyName("appUserModelId")]
         public string AppUserModelId { get; set; } = string.Empty;
+    }
+
+    internal sealed class TemplateAgentDefinition
+    {
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; }
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = "copilot";
+
+        [JsonPropertyName("command")]
+        public string Command { get; set; } = string.Empty;
+
+        [JsonPropertyName("workingDirectory")]
+        public string WorkingDirectory { get; set; } = "{repo}";
+    }
+
+    internal sealed class TemplateCreationDefinition
+    {
+        [JsonPropertyName("createWorktreeByDefault")]
+        public bool CreateWorktreeByDefault { get; set; }
+
+        [JsonPropertyName("worktreeBaseBranch")]
+        public string WorktreeBaseBranch { get; set; } = "main";
     }
 }

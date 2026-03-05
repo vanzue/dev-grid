@@ -282,7 +282,8 @@ namespace TopToolbar.Services.Windowing
                 return;
             }
 
-            _ = ShowWindow(hwnd, SwShowMinimized);
+            // Use async minimize to avoid cross-process UI-thread stalls during batch minimize.
+            _ = ShowWindowAsync(hwnd, SwShowMinimized);
         }
 
         public static bool CanMinimizeWindow(IntPtr hwnd)
@@ -324,6 +325,11 @@ namespace TopToolbar.Services.Windowing
                     return true;
                 }
 
+                if (TryPulseTopmostAndActivate(hwnd))
+                {
+                    return true;
+                }
+
                 var currentThread = GetCurrentThreadId();
                 var foreground = GetForegroundWindow();
                 var foregroundThread = foreground != IntPtr.Zero
@@ -349,6 +355,11 @@ namespace TopToolbar.Services.Windowing
                     _ = ShowWindow(hwnd, SwShowNormal);
                     _ = BringWindowToTop(hwnd);
                     _ = SetForegroundWindow(hwnd);
+
+                    if (GetForegroundWindow() != hwnd)
+                    {
+                        _ = TryPulseTopmostAndActivate(hwnd);
+                    }
                 }
                 finally
                 {
@@ -363,6 +374,28 @@ namespace TopToolbar.Services.Windowing
                     }
                 }
 
+                return GetForegroundWindow() == hwnd;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryPulseTopmostAndActivate(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero || !IsWindow(hwnd))
+            {
+                return false;
+            }
+
+            try
+            {
+                var flags = SwpNoMove | SwpNoSize | SwpShowWindow;
+                _ = SetWindowPos(hwnd, HwndTopMost, 0, 0, 0, 0, flags);
+                _ = SetWindowPos(hwnd, HwndNoTopMost, 0, 0, 0, 0, flags);
+                _ = BringWindowToTop(hwnd);
+                _ = SetForegroundWindow(hwnd);
                 return GetForegroundWindow() == hwnd;
             }
             catch

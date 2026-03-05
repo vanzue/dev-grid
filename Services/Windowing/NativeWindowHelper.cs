@@ -56,6 +56,22 @@ namespace TopToolbar.Services.Windowing
             return TryGetCurrentVirtualDesktopId(out _);
         }
 
+        public static bool TryGetForegroundWindowHandle(out IntPtr handle)
+        {
+            handle = IntPtr.Zero;
+
+            try
+            {
+                handle = GetForegroundWindow();
+                return handle != IntPtr.Zero;
+            }
+            catch
+            {
+                handle = IntPtr.Zero;
+                return false;
+            }
+        }
+
         public static bool TryGetCurrentVirtualDesktopId(out Guid desktopId)
         {
             desktopId = Guid.Empty;

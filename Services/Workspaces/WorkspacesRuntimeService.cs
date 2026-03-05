@@ -67,19 +67,32 @@ namespace TopToolbar.Services.Workspaces
 
         public async Task<bool> LaunchWorkspaceAsync(
             string workspaceId,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            IProgress<string> progress = null,
+            bool allowLaunchMissingWindows = true)
         {
             ObjectDisposedException.ThrowIf(_disposed, nameof(WorkspacesRuntimeService));
-            var result = await _launcher.LaunchWorkspaceAsync(workspaceId, cancellationToken).ConfigureAwait(false);
+            var result = await _launcher.LaunchWorkspaceAsync(workspaceId, cancellationToken, progress, allowLaunchMissingWindows).ConfigureAwait(false);
+            return result != null && result.Ok;
+        }
+
+        public async Task<bool> LaunchWorkspaceAsync(
+            WorkspaceDefinition workspace,
+            CancellationToken cancellationToken,
+            IProgress<string> progress = null)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, nameof(WorkspacesRuntimeService));
+            var result = await _launcher.LaunchWorkspaceAsync(workspace, cancellationToken, progress).ConfigureAwait(false);
             return result != null && result.Ok;
         }
 
         public Task<WorkspaceSwitchDiagnostics> LaunchWorkspaceDetailedAsync(
             string workspaceId,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool allowLaunchMissingWindows = true)
         {
             ObjectDisposedException.ThrowIf(_disposed, nameof(WorkspacesRuntimeService));
-            return _launcher.LaunchWorkspaceAsync(workspaceId, cancellationToken);
+            return _launcher.LaunchWorkspaceAsync(workspaceId, cancellationToken, progress: null, allowLaunchMissingWindows);
         }
 
         public void Dispose()

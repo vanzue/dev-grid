@@ -26,6 +26,12 @@ namespace TopToolbar.Services.Workspaces
         [JsonPropertyName("monitor-rect-dpi-unaware")]
         public MonitorRect DpiUnawareRect { get; set; } = new();
 
+        [JsonPropertyName("monitor-work-rect-dpi-aware")]
+        public MonitorRect DpiAwareWorkRect { get; set; } = new();
+
+        [JsonPropertyName("monitor-work-rect-dpi-unaware")]
+        public MonitorRect DpiUnawareWorkRect { get; set; } = new();
+
         public sealed class MonitorRect
         {
             [JsonPropertyName("top")]

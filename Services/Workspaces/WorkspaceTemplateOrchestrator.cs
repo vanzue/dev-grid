@@ -4,8 +4,11 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using TopToolbar.Services.Display;
@@ -17,6 +20,7 @@ namespace TopToolbar.Services.Workspaces
     {
         internal readonly record struct CreateResult(bool Success, string Message, WorkspaceDefinition Workspace, bool Launched);
         internal readonly record struct SwitchResult(bool Success, string Message, string WorkspaceId, WorkspaceSwitchDiagnostics Diagnostics);
+        private readonly record struct WorktreeCreationResult(bool Success, string WorktreePath, string Message);
 
         internal sealed class CreateWorkspaceRequest
         {
@@ -37,6 +41,14 @@ namespace TopToolbar.Services.Workspaces
             public string SaveTemplateName { get; set; } = string.Empty;
 
             public bool NoLaunch { get; set; }
+
+            public bool? CreateWorktree { get; set; }
+
+            public string WorktreeBaseBranch { get; set; } = string.Empty;
+
+            public bool EphemeralLaunch { get; set; }
+
+            public IProgress<string> Progress { get; set; }
         }
 
         private readonly TemplateStore _templateStore;
@@ -110,10 +122,21 @@ namespace TopToolbar.Services.Workspaces
             ObjectDisposedException.ThrowIf(_disposed, nameof(WorkspaceTemplateOrchestrator));
             ArgumentNullException.ThrowIfNull(request);
 
-            var instanceName = (request.InstanceName ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(instanceName))
+            void ReportProgress(string message)
             {
-                return new CreateResult(false, "Workspace name is required.", null, false);
+                if (string.IsNullOrWhiteSpace(message))
+                {
+                    return;
+                }
+
+                try
+                {
+                    request.Progress?.Report(message);
+                }
+                catch
+                {
+                    // Progress reporting must never break workspace creation.
+                }
             }
 
             var hasTemplate = !string.IsNullOrWhiteSpace(request.TemplateName);
@@ -127,6 +150,7 @@ namespace TopToolbar.Services.Workspaces
             TemplateDefinition template;
             if (hasTemplate)
             {
+                ReportProgress("Loading template...");
                 var templateName = WorkspaceStoragePaths.NormalizeTemplateName(request.TemplateName);
                 template = await _templateStore.LoadByNameAsync(templateName, cancellationToken).ConfigureAwait(false);
                 if (template == null)
@@ -140,7 +164,8 @@ namespace TopToolbar.Services.Workspaces
             }
 
             ApplyOverrides(template, request);
-            TemplateDefinitionValidator.CanonicalizeInPlace(template);
+            ReportProgress("Validating template...");
+            TemplateDefinitionStandardizer.StandardizeInPlace(template);
             var errors = TemplateDefinitionValidator.Validate(template);
             if (errors.Count > 0)
             {
@@ -152,7 +177,7 @@ namespace TopToolbar.Services.Workspaces
                 var save = CloneTemplate(template);
                 save.Name = WorkspaceStoragePaths.NormalizeTemplateName(request.SaveTemplateName);
                 save.DisplayName = BuildDisplayNameFromTemplateName(save.Name);
-                TemplateDefinitionValidator.CanonicalizeInPlace(save);
+                TemplateDefinitionStandardizer.StandardizeInPlace(save);
                 var saveErrors = TemplateDefinitionValidator.Validate(save);
                 if (saveErrors.Count > 0)
                 {
@@ -160,6 +185,17 @@ namespace TopToolbar.Services.Workspaces
                 }
 
                 await _templateStore.SaveTemplateAsync(save, cancellationToken).ConfigureAwait(false);
+            }
+
+            var instanceName = (request.InstanceName ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(instanceName))
+            {
+                if (!request.EphemeralLaunch)
+                {
+                    return new CreateResult(false, "Workspace name is required.", null, false);
+                }
+
+                instanceName = BuildEphemeralInstanceName(template);
             }
 
             var resolvedRepo = ResolveRepoRoot(request.RepoRoot, template.DefaultRepoRoot);
@@ -173,16 +209,56 @@ namespace TopToolbar.Services.Workspaces
                 return new CreateResult(false, $"Repo path '{resolvedRepo}' does not exist.", null, false);
             }
 
-            var existing = await _definitionStore.LoadAllAsync(cancellationToken).ConfigureAwait(false);
-            if (existing.Any(ws =>
-                ws != null
-                && string.Equals(ws.TemplateName, template.Name, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(ws.InstanceName, instanceName, StringComparison.OrdinalIgnoreCase)))
+            if (!request.EphemeralLaunch)
             {
-                return new CreateResult(false, $"Workspace '{BuildWorkspaceTitle(template, instanceName)}' already exists in template '{template.Name}'.", null, false);
+                var existing = await _definitionStore.LoadAllAsync(cancellationToken).ConfigureAwait(false);
+                if (existing.Any(ws =>
+                    ws != null
+                    && string.Equals(ws.TemplateName, template.Name, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(ws.InstanceName, instanceName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return new CreateResult(false, $"Workspace '{BuildWorkspaceTitle(template, instanceName)}' already exists in template '{template.Name}'.", null, false);
+                }
             }
 
-            var workspace = BuildWorkspaceDefinition(template, instanceName, resolvedRepo);
+            var effectiveRepoRoot = resolvedRepo;
+            var shouldCreateWorktree = request.CreateWorktree ?? (template.Creation?.CreateWorktreeByDefault ?? false);
+            if (shouldCreateWorktree)
+            {
+                ReportProgress("Setting up git worktree...");
+                if (string.IsNullOrWhiteSpace(resolvedRepo))
+                {
+                    return new CreateResult(false, "Worktree creation requires a repository path.", null, false);
+                }
+
+                var baseBranch = !string.IsNullOrWhiteSpace(request.WorktreeBaseBranch)
+                    ? request.WorktreeBaseBranch
+                    : template.Creation?.WorktreeBaseBranch;
+                var worktree = await CreateGitWorktreeAsync(resolvedRepo, instanceName, baseBranch, cancellationToken).ConfigureAwait(false);
+                if (!worktree.Success)
+                {
+                    return new CreateResult(false, worktree.Message, null, false);
+                }
+
+                effectiveRepoRoot = worktree.WorktreePath;
+            }
+
+            var workspace = BuildWorkspaceDefinition(template, instanceName, effectiveRepoRoot);
+
+            if (request.EphemeralLaunch)
+            {
+                if (request.NoLaunch)
+                {
+                    return new CreateResult(true, "Window set prepared.", workspace, Launched: false);
+                }
+
+                ReportProgress("Starting workspace launch...");
+                var launchedEphemeral = await _runtimeService.LaunchWorkspaceAsync(workspace, cancellationToken, request.Progress).ConfigureAwait(false);
+                return launchedEphemeral
+                    ? new CreateResult(true, "Window set launched.", workspace, Launched: true)
+                    : new CreateResult(false, "Window set launch failed.", workspace, Launched: false);
+            }
+
             await _definitionStore.SaveWorkspaceAsync(workspace, cancellationToken).ConfigureAwait(false);
             await _buttonStore.EnsureButtonAsync(workspace, cancellationToken).ConfigureAwait(false);
 
@@ -191,7 +267,8 @@ namespace TopToolbar.Services.Workspaces
                 return new CreateResult(true, "Workspace created.", workspace, Launched: false);
             }
 
-            var launched = await _runtimeService.LaunchWorkspaceAsync(workspace.Id, cancellationToken).ConfigureAwait(false);
+            ReportProgress("Starting workspace launch...");
+            var launched = await _runtimeService.LaunchWorkspaceAsync(workspace.Id, cancellationToken, request.Progress).ConfigureAwait(false);
             return launched
                 ? new CreateResult(true, "Workspace created and launched.", workspace, Launched: true)
                 : new CreateResult(false, "Workspace created but launch failed.", workspace, Launched: false);
@@ -212,7 +289,9 @@ namespace TopToolbar.Services.Workspaces
                 });
             }
 
-            var diagnostics = await _runtimeService.LaunchWorkspaceDetailedAsync(trimmed, cancellationToken).ConfigureAwait(false)
+            var diagnostics = await _runtimeService
+                .LaunchWorkspaceDetailedAsync(trimmed, cancellationToken, allowLaunchMissingWindows: false)
+                .ConfigureAwait(false)
                 ?? new WorkspaceSwitchDiagnostics
                 {
                     Ok = false,
@@ -331,6 +410,12 @@ namespace TopToolbar.Services.Workspaces
                     Slots = WorkspaceLayoutEngine.BuildSlots(strategy, roles),
                 },
                 Windows = windows,
+                Agent = new TemplateAgentDefinition(),
+                Creation = new TemplateCreationDefinition
+                {
+                    CreateWorktreeByDefault = false,
+                    WorktreeBaseBranch = "main",
+                },
             };
         }
 
@@ -410,7 +495,9 @@ namespace TopToolbar.Services.Workspaces
 
                 slotMap.TryGetValue(window.Role, out var slot);
                 var monitor = WorkspaceLayoutEngine.ResolveMonitor(monitors, globalMonitorPolicy, window.Monitor) ?? fallbackMonitor;
-                var monitorRect = monitor?.DpiAwareRect ?? new DisplayRect(0, 0, 1600, 900);
+                var monitorRect = monitor != null && !monitor.DpiAwareWorkRect.IsEmpty
+                    ? monitor.DpiAwareWorkRect
+                    : (monitor?.DpiAwareRect ?? new DisplayRect(0, 0, 1600, 900));
                 var baseRect = WorkspaceLayoutEngine.ComputeRect(slot, monitorRect);
                 var monitorKey = monitor?.Id ?? $"index:{monitor?.Index ?? 0}";
                 if (!occupiedByMonitor.TryGetValue(monitorKey, out var occupied))
@@ -425,6 +512,11 @@ namespace TopToolbar.Services.Workspaces
                 var args = ApplyTokens(window.Args, template, instanceName, repoRoot);
                 var init = ApplyTokens(window.Init, template, instanceName, repoRoot);
                 var cwd = ApplyTokens(window.WorkingDirectory, template, instanceName, repoRoot);
+                var commandLine = string.IsNullOrWhiteSpace(args)
+                    ? init
+                    : (string.IsNullOrWhiteSpace(init) ? args : $"{args} {init}".Trim());
+
+                ApplyRepoScopedDefaults(template, window, repoRoot, exe, ref cwd, ref commandLine);
 
                 apps.Add(new ApplicationDefinition
                 {
@@ -433,8 +525,11 @@ namespace TopToolbar.Services.Workspaces
                     Role = window.Role ?? string.Empty,
                     Path = exe,
                     Title = window.MatchHints?.Title ?? string.Empty,
-                    CommandLineArguments = string.IsNullOrWhiteSpace(args) ? init : (string.IsNullOrWhiteSpace(init) ? args : $"{args} {init}".Trim()),
+                    CommandLineArguments = commandLine,
                     WorkingDirectory = cwd,
+                    // For template-created workspaces, first launch should create dedicated instances
+                    // instead of stealing unrelated already-open windows. Once launched, binding reuse applies.
+                    LaunchNewIfUnbound = true,
                     AppUserModelId = window.MatchHints?.AppUserModelId ?? string.Empty,
                     MonitorIndex = monitor?.Index ?? 0,
                     Position = new ApplicationDefinition.ApplicationPosition
@@ -460,6 +555,8 @@ namespace TopToolbar.Services.Workspaces
                 CreationTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 IsShortcutNeeded = false,
                 MoveExistingWindows = true,
+                RuntimeSessionOnly = true,
+                RuntimeSessionId = WorkspaceRuntimeSession.SessionId,
                 Monitors = monitors.Select(m => new MonitorDefinition
                 {
                     Id = m.Id,
@@ -468,6 +565,8 @@ namespace TopToolbar.Services.Workspaces
                     Dpi = m.Dpi,
                     DpiAwareRect = new MonitorDefinition.MonitorRect { Left = m.DpiAwareRect.Left, Top = m.DpiAwareRect.Top, Width = m.DpiAwareRect.Width, Height = m.DpiAwareRect.Height },
                     DpiUnawareRect = new MonitorDefinition.MonitorRect { Left = m.DpiUnawareRect.Left, Top = m.DpiUnawareRect.Top, Width = m.DpiUnawareRect.Width, Height = m.DpiUnawareRect.Height },
+                    DpiAwareWorkRect = new MonitorDefinition.MonitorRect { Left = m.DpiAwareWorkRect.Left, Top = m.DpiAwareWorkRect.Top, Width = m.DpiAwareWorkRect.Width, Height = m.DpiAwareWorkRect.Height },
+                    DpiUnawareWorkRect = new MonitorDefinition.MonitorRect { Left = m.DpiUnawareWorkRect.Left, Top = m.DpiUnawareWorkRect.Top, Width = m.DpiUnawareWorkRect.Width, Height = m.DpiUnawareWorkRect.Height },
                 }).ToList(),
                 Applications = apps,
             };
@@ -477,6 +576,202 @@ namespace TopToolbar.Services.Workspaces
         {
             var candidate = string.IsNullOrWhiteSpace(explicitRepo) ? defaultRepo : explicitRepo;
             return string.IsNullOrWhiteSpace(candidate) ? string.Empty : Environment.ExpandEnvironmentVariables(candidate).Trim();
+        }
+
+        private static void ApplyRepoScopedDefaults(
+            TemplateDefinition template,
+            TemplateWindowDefinition window,
+            string repoRoot,
+            string exe,
+            ref string cwd,
+            ref string commandLine)
+        {
+            if (string.IsNullOrWhiteSpace(repoRoot) || window == null)
+            {
+                return;
+            }
+
+            var role = (window.Role ?? string.Empty).Trim();
+            var isVsCodeEditor = string.Equals(role, "editor", StringComparison.OrdinalIgnoreCase)
+                && IsExecutable(exe, "code.exe");
+            if (isVsCodeEditor)
+            {
+                cwd = repoRoot;
+                if (string.IsNullOrWhiteSpace(commandLine))
+                {
+                    commandLine = $"--new-window {QuoteArgument(repoRoot)}";
+                    return;
+                }
+
+                if (!ContainsArgumentToken(commandLine, "--new-window")
+                    && !ContainsArgumentToken(commandLine, "-n"))
+                {
+                    commandLine = $"--new-window {commandLine}".Trim();
+                }
+
+                var hasRepoArg = commandLine.IndexOf(repoRoot, StringComparison.OrdinalIgnoreCase) >= 0
+                    || commandLine.IndexOf("{repo}", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (!hasRepoArg)
+                {
+                    commandLine = $"{commandLine} {QuoteArgument(repoRoot)}".Trim();
+                }
+
+                return;
+            }
+
+            var isLogsExplorer = string.Equals(role, "logs", StringComparison.OrdinalIgnoreCase)
+                && IsExecutable(exe, "explorer.exe");
+            if (isLogsExplorer)
+            {
+                if (string.IsNullOrWhiteSpace(commandLine))
+                {
+                    commandLine = QuoteArgument(repoRoot);
+                }
+
+                if (!ContainsExplorerNewWindowSwitch(commandLine))
+                {
+                    commandLine = $"/n, {commandLine}".Trim();
+                }
+
+                return;
+            }
+
+            var isTerminal = string.Equals(role, "terminal", StringComparison.OrdinalIgnoreCase)
+                && IsExecutable(exe, "wt.exe");
+            if (!isTerminal || template?.Agent?.Enabled != true)
+            {
+                return;
+            }
+
+            cwd = repoRoot;
+            if (!string.IsNullOrWhiteSpace(commandLine))
+            {
+                commandLine = NormalizeAgentTerminalCommandLine(commandLine, template.Agent?.Name);
+                return;
+            }
+
+            var agentCommand = NormalizeAgentCommandText(template.Agent?.Command, template.Agent?.Name);
+            commandLine = $"pwsh -NoExit -Command {QuoteArgument(agentCommand)}";
+        }
+
+        private static string NormalizeAgentTerminalCommandLine(string commandLine, string fallbackAgentName)
+        {
+            var current = (commandLine ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(current))
+            {
+                return string.Empty;
+            }
+
+            var hasKnownShell = current.IndexOf("pwsh", StringComparison.OrdinalIgnoreCase) >= 0
+                || current.IndexOf("powershell", StringComparison.OrdinalIgnoreCase) >= 0
+                || current.IndexOf("cmd.exe", StringComparison.OrdinalIgnoreCase) >= 0
+                || current.StartsWith("cmd ", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(current, "cmd", StringComparison.OrdinalIgnoreCase)
+                || current.IndexOf(" wsl", StringComparison.OrdinalIgnoreCase) >= 0
+                || current.StartsWith("wsl", StringComparison.OrdinalIgnoreCase)
+                || current.IndexOf(" bash", StringComparison.OrdinalIgnoreCase) >= 0
+                || current.StartsWith("bash", StringComparison.OrdinalIgnoreCase);
+            if (hasKnownShell)
+            {
+                return current;
+            }
+
+            var normalizedCommand = NormalizeAgentCommandText(current, fallbackAgentName);
+            return string.IsNullOrWhiteSpace(normalizedCommand)
+                ? current
+                : $"pwsh -NoExit -Command {QuoteArgument(normalizedCommand)}";
+        }
+
+        private static bool ContainsExplorerNewWindowSwitch(string arguments)
+        {
+            if (string.IsNullOrWhiteSpace(arguments))
+            {
+                return false;
+            }
+
+            var value = arguments.Trim();
+            return value.StartsWith("/n", StringComparison.OrdinalIgnoreCase)
+                || value.Contains(" /n", StringComparison.OrdinalIgnoreCase)
+                || value.Contains(",/n", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool ContainsArgumentToken(string arguments, string token)
+        {
+            if (string.IsNullOrWhiteSpace(arguments) || string.IsNullOrWhiteSpace(token))
+            {
+                return false;
+            }
+
+            return arguments.StartsWith(token + " ", StringComparison.OrdinalIgnoreCase)
+                || arguments.Equals(token, StringComparison.OrdinalIgnoreCase)
+                || arguments.EndsWith(" " + token, StringComparison.OrdinalIgnoreCase)
+                || arguments.Contains(" " + token + " ", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsExecutable(string executablePath, string expectedExe)
+        {
+            if (string.IsNullOrWhiteSpace(executablePath) || string.IsNullOrWhiteSpace(expectedExe))
+            {
+                return false;
+            }
+
+            var actual = Path.GetFileName(executablePath.Trim().Trim('"'));
+            return string.Equals(actual, expectedExe, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string QuoteArgument(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return string.Empty;
+            }
+
+            var escaped = normalized.Replace("\"", "\\\"", StringComparison.Ordinal);
+            return $"\"{escaped}\"";
+        }
+
+        private static string NormalizeAgentCommandText(string value, string fallbackName = null)
+        {
+            var normalized = DequoteArgument(value);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                normalized = string.IsNullOrWhiteSpace(fallbackName) ? "copilot" : fallbackName.Trim();
+            }
+
+            return DequoteArgument(normalized);
+        }
+
+        private static string DequoteArgument(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return string.Empty;
+            }
+
+            for (var i = 0; i < 4; i++)
+            {
+                var before = normalized;
+                normalized = normalized.Replace("\\\"", "\"", StringComparison.Ordinal).Trim();
+
+                if (normalized.Length >= 2 && normalized[0] == '"' && normalized[^1] == '"')
+                {
+                    normalized = normalized.Substring(1, normalized.Length - 2).Trim();
+                }
+
+                if (normalized.Length >= 2 && normalized[0] == '\'' && normalized[^1] == '\'')
+                {
+                    normalized = normalized.Substring(1, normalized.Length - 2).Trim();
+                }
+
+                if (string.Equals(before, normalized, StringComparison.Ordinal))
+                {
+                    break;
+                }
+            }
+
+            return normalized.Trim();
         }
 
         private static string ApplyTokens(string value, TemplateDefinition template, string instanceName, string repoRoot)
@@ -496,6 +791,18 @@ namespace TopToolbar.Services.Workspaces
         {
             var display = string.IsNullOrWhiteSpace(template?.DisplayName) ? template?.Name : template.DisplayName;
             return $"{(string.IsNullOrWhiteSpace(display) ? "Workspace" : display)} · {instanceName}".Trim();
+        }
+
+        private static string BuildEphemeralInstanceName(TemplateDefinition template)
+        {
+            var baseName = string.IsNullOrWhiteSpace(template?.Name) ? "workspace" : template.Name;
+            var slug = BuildWorktreeSlug(baseName);
+            if (string.IsNullOrWhiteSpace(slug))
+            {
+                slug = "workspace";
+            }
+
+            return $"{slug}-{DateTime.Now:yyyyMMdd-HHmmss}";
         }
 
         private static string BuildApplicationName(string exe, string role)
@@ -520,6 +827,147 @@ namespace TopToolbar.Services.Workspaces
         private static bool ContainsRepoToken(string value)
         {
             return !string.IsNullOrWhiteSpace(value) && value.IndexOf("{repo}", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static async Task<WorktreeCreationResult> CreateGitWorktreeAsync(
+            string repoRoot,
+            string instanceName,
+            string baseBranch,
+            CancellationToken cancellationToken)
+        {
+            var normalizedRepo = (repoRoot ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(normalizedRepo))
+            {
+                return new WorktreeCreationResult(false, string.Empty, "Repository path is required for worktree creation.");
+            }
+
+            if (!Directory.Exists(normalizedRepo))
+            {
+                return new WorktreeCreationResult(false, string.Empty, $"Repo path '{normalizedRepo}' does not exist.");
+            }
+
+            if (!IsGitRepository(normalizedRepo))
+            {
+                return new WorktreeCreationResult(false, string.Empty, $"Repo path '{normalizedRepo}' is not a git repository.");
+            }
+
+            var slug = BuildWorktreeSlug(instanceName);
+            if (string.IsNullOrWhiteSpace(slug))
+            {
+                return new WorktreeCreationResult(false, string.Empty, "Workspace name is invalid for worktree branch naming.");
+            }
+
+            var branchName = slug;
+            var worktreeRoot = Path.Combine(normalizedRepo, ".worktrees");
+            var worktreePath = Path.Combine(worktreeRoot, slug);
+            if (Directory.Exists(worktreePath))
+            {
+                return new WorktreeCreationResult(false, string.Empty, $"Worktree path '{worktreePath}' already exists.");
+            }
+
+            Directory.CreateDirectory(worktreeRoot);
+
+            var effectiveBaseBranch = string.IsNullOrWhiteSpace(baseBranch)
+                ? "main"
+                : baseBranch.Trim();
+
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = "git",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                startInfo.ArgumentList.Add("-C");
+                startInfo.ArgumentList.Add(normalizedRepo);
+                startInfo.ArgumentList.Add("worktree");
+                startInfo.ArgumentList.Add("add");
+                startInfo.ArgumentList.Add("-b");
+                startInfo.ArgumentList.Add(branchName);
+                startInfo.ArgumentList.Add(worktreePath);
+                startInfo.ArgumentList.Add(effectiveBaseBranch);
+
+                using var process = new Process { StartInfo = startInfo };
+                if (!process.Start())
+                {
+                    return new WorktreeCreationResult(false, string.Empty, "Failed to start git process.");
+                }
+
+                var stdOutTask = process.StandardOutput.ReadToEndAsync();
+                var stdErrTask = process.StandardError.ReadToEndAsync();
+                await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+                var stdOut = (await stdOutTask.ConfigureAwait(false)).Trim();
+                var stdErr = (await stdErrTask.ConfigureAwait(false)).Trim();
+
+                if (process.ExitCode != 0)
+                {
+                    var details = string.IsNullOrWhiteSpace(stdErr) ? stdOut : stdErr;
+                    if (string.IsNullOrWhiteSpace(details))
+                    {
+                        details = $"git exited with code {process.ExitCode}.";
+                    }
+
+                    return new WorktreeCreationResult(false, string.Empty, $"Failed to create git worktree: {details}");
+                }
+
+                if (!Directory.Exists(worktreePath))
+                {
+                    return new WorktreeCreationResult(false, string.Empty, $"Worktree path '{worktreePath}' was not created.");
+                }
+
+                return new WorktreeCreationResult(true, worktreePath, $"Created worktree '{branchName}'.");
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Win32Exception ex)
+            {
+                return new WorktreeCreationResult(false, string.Empty, $"Failed to execute git: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                return new WorktreeCreationResult(false, string.Empty, $"Failed to create git worktree: {ex.Message}");
+            }
+        }
+
+        private static bool IsGitRepository(string repoRoot)
+        {
+            var gitPath = Path.Combine(repoRoot, ".git");
+            return Directory.Exists(gitPath) || File.Exists(gitPath);
+        }
+
+        private static string BuildWorktreeSlug(string workspaceName)
+        {
+            if (string.IsNullOrWhiteSpace(workspaceName))
+            {
+                return string.Empty;
+            }
+
+            var source = workspaceName.Trim().ToLowerInvariant();
+            var builder = new StringBuilder(source.Length);
+            var previousWasDash = false;
+            foreach (var ch in source)
+            {
+                if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9'))
+                {
+                    builder.Append(ch);
+                    previousWasDash = false;
+                    continue;
+                }
+
+                if (!previousWasDash)
+                {
+                    builder.Append('-');
+                    previousWasDash = true;
+                }
+            }
+
+            var slug = builder.ToString().Trim('-');
+            return string.IsNullOrWhiteSpace(slug) ? "workspace" : slug;
         }
 
         private static TemplateDefinition CloneTemplate(TemplateDefinition template)
@@ -565,6 +1013,18 @@ namespace TopToolbar.Services.Workspaces
                         AppUserModelId = w.MatchHints?.AppUserModelId ?? string.Empty,
                     },
                 }).ToList() ?? new List<TemplateWindowDefinition>(),
+                Agent = new TemplateAgentDefinition
+                {
+                    Enabled = template.Agent?.Enabled ?? false,
+                    Name = template.Agent?.Name ?? "copilot",
+                    Command = template.Agent?.Command ?? string.Empty,
+                    WorkingDirectory = template.Agent?.WorkingDirectory ?? "{repo}",
+                },
+                Creation = new TemplateCreationDefinition
+                {
+                    CreateWorktreeByDefault = template.Creation?.CreateWorktreeByDefault ?? false,
+                    WorktreeBaseBranch = template.Creation?.WorktreeBaseBranch ?? "main",
+                },
             };
         }
 

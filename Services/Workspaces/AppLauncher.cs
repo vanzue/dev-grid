@@ -6,11 +6,13 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Win32;
 using Windows.Management.Deployment;
 using TopToolbar.Logging;
 using TopToolbar.Services.Windowing;
@@ -377,7 +379,7 @@ namespace TopToolbar.Services.Workspaces
             IReadOnlyCollection<IntPtr> knownHandles,
             CancellationToken cancellationToken)
         {
-            var expandedPath = ExpandPath(app.Path);
+            var expandedPath = ResolveLaunchPath(app.Path);
             var resolvedWorkingDirectory = ResolveWorkingDirectory(app.WorkingDirectory);
             var useShellExecute =
                 expandedPath.StartsWith("shell:", StringComparison.OrdinalIgnoreCase)
@@ -404,6 +406,16 @@ namespace TopToolbar.Services.Workspaces
                 {
                     AppLogger.LogInfo(
                         $"WorkspaceRuntime: terminal launch args adjusted for cwd. path='{expandedPath}', cwd='{resolvedWorkingDirectory}', args='{effectiveArguments}'.");
+                }
+                else if (IsVsCodeApp(expandedPath, app?.Name))
+                {
+                    AppLogger.LogInfo(
+                        $"WorkspaceRuntime: VS Code launch args adjusted. path='{expandedPath}', cwd='{resolvedWorkingDirectory}', args='{effectiveArguments}'.");
+                }
+                else if (IsExplorerApp(expandedPath, app?.Name))
+                {
+                    AppLogger.LogInfo(
+                        $"WorkspaceRuntime: Explorer launch args adjusted. path='{expandedPath}', args='{effectiveArguments}'.");
                 }
 
                 using var process = Process.Start(startInfo);
@@ -455,6 +467,55 @@ namespace TopToolbar.Services.Workspaces
             }
         }
 
+        private static string ResolveLaunchPath(string path)
+        {
+            var expanded = ExpandPath(path);
+            if (string.IsNullOrWhiteSpace(expanded))
+            {
+                return string.Empty;
+            }
+
+            if (expanded.StartsWith("shell:", StringComparison.OrdinalIgnoreCase))
+            {
+                return expanded;
+            }
+
+            if (File.Exists(expanded))
+            {
+                return expanded;
+            }
+
+            if (ContainsDirectorySyntax(expanded))
+            {
+                return expanded;
+            }
+
+            var fromPath = ResolveExecutableFromPath(expanded);
+            if (!string.IsNullOrWhiteSpace(fromPath))
+            {
+                return fromPath;
+            }
+
+            var fromRegistry = ResolveExecutableFromAppPathsRegistry(expanded);
+            if (!string.IsNullOrWhiteSpace(fromRegistry))
+            {
+                return fromRegistry;
+            }
+
+            var fromKnownLocations = ResolveExecutableFromKnownLocations(expanded);
+            if (!string.IsNullOrWhiteSpace(fromKnownLocations))
+            {
+                return fromKnownLocations;
+            }
+
+            return expanded;
+        }
+
+        internal static string ResolveTemplateExecutable(string executableOrPath)
+        {
+            return ResolveLaunchPath(executableOrPath);
+        }
+
         private static string DetermineWorkingDirectory(
             string path,
             bool useShellExecute,
@@ -495,26 +556,386 @@ namespace TopToolbar.Services.Workspaces
                 ? string.Empty
                 : app.CommandLineArguments.Trim();
 
+            if (IsVsCodeApp(expandedPath, app?.Name))
+            {
+                baseArguments = EnsureVsCodeArguments(baseArguments, resolvedWorkingDirectory, app);
+            }
+            else if (IsExplorerApp(expandedPath, app?.Name))
+            {
+                baseArguments = EnsureExplorerArguments(baseArguments, resolvedWorkingDirectory);
+            }
+
             if (!IsWindowsTerminalApp(expandedPath, app?.Name))
             {
                 return baseArguments;
             }
 
+            baseArguments = NormalizeWindowsTerminalArguments(baseArguments);
+
+            var shouldForceNewWindow = app?.LaunchNewIfUnbound == true
+                && !ContainsArgumentToken(baseArguments, "--window")
+                && !ContainsArgumentToken(baseArguments, "-w");
+
+            string AddNewWindowOption(string value)
+            {
+                if (!shouldForceNewWindow)
+                {
+                    return value;
+                }
+
+                return string.IsNullOrWhiteSpace(value)
+                    ? "-w new"
+                    : $"-w new {value}";
+            }
+
             if (string.IsNullOrWhiteSpace(resolvedWorkingDirectory))
             {
-                return baseArguments;
+                return AddNewWindowOption(baseArguments);
             }
 
             if (ContainsWindowsTerminalStartDirectory(baseArguments))
             {
-                return baseArguments;
+                return AddNewWindowOption(baseArguments);
             }
 
             var escapedPath = resolvedWorkingDirectory.Replace("\"", "\\\"", StringComparison.Ordinal);
             var directoryArgument = $"-d \"{escapedPath}\"";
-            return string.IsNullOrWhiteSpace(baseArguments)
+            var withDirectory = string.IsNullOrWhiteSpace(baseArguments)
                 ? directoryArgument
                 : $"{directoryArgument} {baseArguments}";
+            return AddNewWindowOption(withDirectory);
+        }
+
+        private static string EnsureTerminalCommandUsesWorkingDirectory(string arguments, string workingDirectory)
+        {
+            var value = (arguments ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(value) || string.IsNullOrWhiteSpace(workingDirectory))
+            {
+                return value;
+            }
+
+            var hasPwsh = value.IndexOf("pwsh", StringComparison.OrdinalIgnoreCase) >= 0
+                || value.IndexOf("powershell", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!hasPwsh)
+            {
+                return value;
+            }
+
+            var commandMarker = " -Command ";
+            var commandIndex = value.IndexOf(commandMarker, StringComparison.OrdinalIgnoreCase);
+            if (commandIndex < 0)
+            {
+                commandMarker = "-Command ";
+                commandIndex = value.IndexOf(commandMarker, StringComparison.OrdinalIgnoreCase);
+                if (commandIndex < 0)
+                {
+                    return value;
+                }
+            }
+
+            if (value.IndexOf("Set-Location", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return value;
+            }
+
+            var markerStart = commandIndex + commandMarker.Length;
+            var prefix = value.Substring(0, markerStart).TrimEnd();
+            var rawCommand = value.Substring(markerStart).Trim();
+            if (string.IsNullOrWhiteSpace(rawCommand))
+            {
+                return value;
+            }
+
+            var commandText = NormalizeTerminalCommandText(rawCommand);
+            if (string.IsNullOrWhiteSpace(commandText))
+            {
+                return value;
+            }
+
+            var escapedWorkingDirectory = workingDirectory.Replace("'", "''", StringComparison.Ordinal);
+            var updatedCommand = $"Set-Location -LiteralPath '{escapedWorkingDirectory}'; {commandText}".Trim();
+            return $"{prefix} {QuoteArgument(updatedCommand)}".Trim();
+        }
+
+        private static string NormalizeWindowsTerminalArguments(string arguments)
+        {
+            var value = (arguments ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var hasKnownShell = value.IndexOf("pwsh", StringComparison.OrdinalIgnoreCase) >= 0
+                || value.IndexOf("powershell", StringComparison.OrdinalIgnoreCase) >= 0
+                || value.IndexOf("cmd.exe", StringComparison.OrdinalIgnoreCase) >= 0
+                || value.IndexOf(" wsl", StringComparison.OrdinalIgnoreCase) >= 0
+                || value.StartsWith("wsl", StringComparison.OrdinalIgnoreCase)
+                || value.IndexOf(" bash", StringComparison.OrdinalIgnoreCase) >= 0
+                || value.StartsWith("bash", StringComparison.OrdinalIgnoreCase);
+            if (hasKnownShell)
+            {
+                return value;
+            }
+
+            var firstToken = ExtractFirstToken(value);
+            if (LooksLikeWindowsTerminalDirective(firstToken))
+            {
+                return value;
+            }
+
+            var command = NormalizeTerminalCommandText(value);
+            if (string.IsNullOrWhiteSpace(command))
+            {
+                return value;
+            }
+
+            var normalized = $"pwsh -NoExit -Command {QuoteArgument(command)}";
+            AppLogger.LogInfo(
+                $"WorkspaceRuntime: normalized terminal command-line. original='{value}', normalized='{normalized}'.");
+            return normalized;
+        }
+
+        private static string NormalizeTerminalCommandText(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return string.Empty;
+            }
+
+            for (var i = 0; i < 4; i++)
+            {
+                var before = normalized;
+                normalized = normalized.Replace("\\\"", "\"", StringComparison.Ordinal).Trim();
+
+                if (normalized.Length >= 2 && normalized[0] == '"' && normalized[^1] == '"')
+                {
+                    var inner = normalized.Substring(1, normalized.Length - 2).Trim();
+                    if (ShouldUnwrapQuotedCommand(inner))
+                    {
+                        normalized = inner;
+                    }
+                }
+
+                if (normalized.Length >= 2 && normalized[0] == '\'' && normalized[^1] == '\'')
+                {
+                    var inner = normalized.Substring(1, normalized.Length - 2).Trim();
+                    if (ShouldUnwrapQuotedCommand(inner))
+                    {
+                        normalized = inner;
+                    }
+                }
+
+                if (string.Equals(before, normalized, StringComparison.Ordinal))
+                {
+                    break;
+                }
+            }
+
+            return normalized.Trim();
+        }
+
+        private static bool ShouldUnwrapQuotedCommand(string inner)
+        {
+            if (string.IsNullOrWhiteSpace(inner))
+            {
+                return true;
+            }
+
+            if (!inner.Any(char.IsWhiteSpace))
+            {
+                return true;
+            }
+
+            return !LooksLikeFilesystemPath(inner);
+        }
+
+        private static bool LooksLikeFilesystemPath(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            return value.Contains(Path.DirectorySeparatorChar)
+                || value.Contains(Path.AltDirectorySeparatorChar)
+                || value.Contains(":");
+        }
+
+        private static string ExtractFirstToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var trimmed = value.TrimStart();
+            if (trimmed.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            if (trimmed[0] == '"')
+            {
+                var endQuote = trimmed.IndexOf('"', 1);
+                if (endQuote > 0)
+                {
+                    return trimmed.Substring(0, endQuote + 1);
+                }
+            }
+
+            var firstSpace = trimmed.IndexOfAny(new[] { ' ', '\t' });
+            return firstSpace < 0 ? trimmed : trimmed.Substring(0, firstSpace);
+        }
+
+        private static bool LooksLikeWindowsTerminalDirective(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return false;
+            }
+
+            if (token.StartsWith("-", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            return string.Equals(token, "new-tab", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(token, "nt", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(token, "split-pane", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(token, "sp", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(token, "focus-tab", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(token, "ft", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(token, "move-focus", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(token, "mf", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(token, "commandline", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string EnsureVsCodeArguments(
+            string arguments,
+            string resolvedWorkingDirectory,
+            ApplicationDefinition app)
+        {
+            var current = (arguments ?? string.Empty).Trim();
+            if (!ContainsArgumentToken(current, "--new-window")
+                && !ContainsArgumentToken(current, "-n"))
+            {
+                current = string.IsNullOrWhiteSpace(current)
+                    ? "--new-window"
+                    : $"--new-window {current}";
+            }
+
+            if (app?.LaunchNewIfUnbound == true)
+            {
+                if (!ContainsArgumentToken(current, "--skip-welcome"))
+                {
+                    current = string.IsNullOrWhiteSpace(current)
+                        ? "--skip-welcome"
+                        : $"{current} --skip-welcome";
+                }
+
+                if (!ContainsArgumentToken(current, "--user-data-dir"))
+                {
+                    var userDataDirectory = BuildVsCodeUserDataDirectory(app.Id);
+                    if (!string.IsNullOrWhiteSpace(userDataDirectory))
+                    {
+                        current = string.IsNullOrWhiteSpace(current)
+                            ? $"--user-data-dir {QuoteArgument(userDataDirectory)}"
+                            : $"{current} --user-data-dir {QuoteArgument(userDataDirectory)}";
+                    }
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(resolvedWorkingDirectory))
+            {
+                return current;
+            }
+
+            var hasRepoTarget = current.IndexOf(resolvedWorkingDirectory, StringComparison.OrdinalIgnoreCase) >= 0
+                || current.IndexOf("{repo}", StringComparison.OrdinalIgnoreCase) >= 0
+                || ContainsArgumentToken(current, "--folder-uri");
+            if (!hasRepoTarget)
+            {
+                current = $"{current} {QuoteArgument(resolvedWorkingDirectory)}".Trim();
+            }
+
+            return current;
+        }
+
+        private static string BuildVsCodeUserDataDirectory(string appId)
+        {
+            var id = string.IsNullOrWhiteSpace(appId) ? "default" : appId.Trim();
+            var safe = string.Concat(id.Where(ch =>
+                (ch >= 'a' && ch <= 'z')
+                || (ch >= 'A' && ch <= 'Z')
+                || (ch >= '0' && ch <= '9')
+                || ch == '-'
+                || ch == '_'));
+            if (string.IsNullOrWhiteSpace(safe))
+            {
+                safe = "default";
+            }
+
+            try
+            {
+                var stamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture);
+                var suffix = Guid.NewGuid().ToString("N").Substring(0, 8);
+                var folderName = $"{safe}-{stamp}-{suffix}";
+                var directory = Path.Combine(global::TopToolbar.AppPaths.ProfilesDirectory, "vscode", folderName);
+                Directory.CreateDirectory(directory);
+                return directory;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static string EnsureExplorerArguments(string arguments, string resolvedWorkingDirectory)
+        {
+            var current = (arguments ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(current) && !string.IsNullOrWhiteSpace(resolvedWorkingDirectory))
+            {
+                current = QuoteArgument(resolvedWorkingDirectory);
+            }
+
+            if (string.IsNullOrWhiteSpace(current))
+            {
+                return current;
+            }
+
+            if (!ContainsExplorerNewWindowSwitch(current))
+            {
+                current = $"/n, {current}";
+            }
+
+            return current;
+        }
+
+        private static bool ContainsExplorerNewWindowSwitch(string arguments)
+        {
+            if (string.IsNullOrWhiteSpace(arguments))
+            {
+                return false;
+            }
+
+            var value = arguments.Trim();
+            return value.StartsWith("/n", StringComparison.OrdinalIgnoreCase)
+                || value.Contains(" /n", StringComparison.OrdinalIgnoreCase)
+                || value.Contains(",/n", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool ContainsArgumentToken(string arguments, string token)
+        {
+            if (string.IsNullOrWhiteSpace(arguments) || string.IsNullOrWhiteSpace(token))
+            {
+                return false;
+            }
+
+            return arguments.StartsWith(token + " ", StringComparison.OrdinalIgnoreCase)
+                || arguments.Equals(token, StringComparison.OrdinalIgnoreCase)
+                || arguments.EndsWith(" " + token, StringComparison.OrdinalIgnoreCase)
+                || arguments.Contains(" " + token + " ", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool ContainsWindowsTerminalStartDirectory(string arguments)
@@ -538,6 +959,159 @@ namespace TopToolbar.Services.Workspaces
                 || string.Equals(normalizedPath, "windowsterminal", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalizedName, "wt", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalizedName, "windowsterminal", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsVsCodeApp(string path, string appName)
+        {
+            var normalizedPath = NormalizeProcessIdentity(path);
+            var normalizedName = NormalizeProcessIdentity(appName);
+            return string.Equals(normalizedPath, "code", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedName, "code", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsExplorerApp(string path, string appName)
+        {
+            var normalizedPath = NormalizeProcessIdentity(path);
+            var normalizedName = NormalizeProcessIdentity(appName);
+            return string.Equals(normalizedPath, "explorer", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedName, "explorer", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool ContainsDirectorySyntax(string value)
+        {
+            return value.Contains(Path.DirectorySeparatorChar)
+                || value.Contains(Path.AltDirectorySeparatorChar)
+                || value.Contains(":");
+        }
+
+        private static string ResolveExecutableFromPath(string executableName)
+        {
+            try
+            {
+                var pathValue = Environment.GetEnvironmentVariable("PATH");
+                if (string.IsNullOrWhiteSpace(pathValue))
+                {
+                    return string.Empty;
+                }
+
+                var names = new List<string>();
+                if (executableName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    names.Add(executableName);
+                }
+                else
+                {
+                    names.Add(executableName + ".exe");
+                    names.Add(executableName);
+                }
+
+                var dirs = pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+                for (var i = 0; i < dirs.Length; i++)
+                {
+                    var dir = dirs[i]?.Trim();
+                    if (string.IsNullOrWhiteSpace(dir))
+                    {
+                        continue;
+                    }
+
+                    for (var j = 0; j < names.Count; j++)
+                    {
+                        var candidate = Path.Combine(dir, names[j]);
+                        if (File.Exists(candidate))
+                        {
+                            return candidate;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return string.Empty;
+        }
+
+        private static string ResolveExecutableFromAppPathsRegistry(string executableName)
+        {
+            try
+            {
+                var keyName = executableName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                    ? executableName
+                    : executableName + ".exe";
+                var subKeyPath = $@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{keyName}";
+
+                var userValue = Registry.GetValue($@"HKEY_CURRENT_USER\{subKeyPath}", null, null) as string;
+                if (!string.IsNullOrWhiteSpace(userValue) && File.Exists(userValue))
+                {
+                    return userValue;
+                }
+
+                var machineValue = Registry.GetValue($@"HKEY_LOCAL_MACHINE\{subKeyPath}", null, null) as string;
+                if (!string.IsNullOrWhiteSpace(machineValue) && File.Exists(machineValue))
+                {
+                    return machineValue;
+                }
+            }
+            catch
+            {
+            }
+
+            return string.Empty;
+        }
+
+        private static string ResolveExecutableFromKnownLocations(string executableName)
+        {
+            var normalized = NormalizeProcessIdentity(executableName);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return string.Empty;
+            }
+
+            if (string.Equals(normalized, "code", StringComparison.OrdinalIgnoreCase))
+            {
+                var candidates = new[]
+                {
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Microsoft VS Code", "Code.exe"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft VS Code", "Code.exe"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft VS Code", "Code.exe"),
+                };
+
+                for (var i = 0; i < candidates.Length; i++)
+                {
+                    var candidate = candidates[i];
+                    if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static string QuoteArgument(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return string.Empty;
+            }
+
+            var escaped = normalized.Replace("\"", "\\\"", StringComparison.Ordinal);
+            return $"\"{escaped}\"";
+        }
+
+        private static string DequoteArgument(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim();
+            if (normalized.Length >= 2
+                && normalized[0] == '"'
+                && normalized[^1] == '"')
+            {
+                normalized = normalized.Substring(1, normalized.Length - 2);
+            }
+
+            return normalized.Replace("\\\"", "\"", StringComparison.Ordinal);
         }
 
         private static string NormalizeProcessIdentity(string value)

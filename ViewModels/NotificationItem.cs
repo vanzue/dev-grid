@@ -11,16 +11,23 @@ namespace TopToolbar.ViewModels
         Error,
         Warning,
         Info,
+        Success,
+        Progress,
     }
 
     public sealed class NotificationItem
     {
         public NotificationItem(NotificationKind kind, string message)
+            : this(Guid.NewGuid(), kind, message, DateTimeOffset.UtcNow)
         {
-            Id = Guid.NewGuid();
+        }
+
+        private NotificationItem(Guid id, NotificationKind kind, string message, DateTimeOffset createdAt)
+        {
+            Id = id;
             Kind = kind;
             Message = message ?? string.Empty;
-            CreatedAt = DateTimeOffset.UtcNow;
+            CreatedAt = createdAt;
         }
 
         public Guid Id { get; }
@@ -30,5 +37,10 @@ namespace TopToolbar.ViewModels
         public string Message { get; }
 
         public DateTimeOffset CreatedAt { get; }
+
+        public NotificationItem WithMessage(NotificationKind kind, string message)
+        {
+            return new NotificationItem(Id, kind, message, CreatedAt);
+        }
     }
 }

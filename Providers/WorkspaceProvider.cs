@@ -50,6 +50,16 @@ namespace TopToolbar.Providers
             _definitionStore = new WorkspaceDefinitionStore(null, _configStore);
             _buttonStore = new WorkspaceButtonStore(_configStore, _definitionStore);
             _workspacesService = new WorkspacesRuntimeService(_configStore.FilePath);
+
+            try
+            {
+                _definitionStore.PruneStaleRuntimeWorkspacesOnceAsync(CancellationToken.None).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"WorkspaceProvider: startup runtime workspace prune failed - {ex.Message}");
+            }
+
             StartWatcher();
         }
 
@@ -604,7 +614,9 @@ namespace TopToolbar.Providers
         {
             try
             {
-                var success = await _workspacesService.LaunchWorkspaceAsync(workspaceId, cancellationToken).ConfigureAwait(false);
+                var success = await _workspacesService
+                    .LaunchWorkspaceAsync(workspaceId, cancellationToken, progress: null, allowLaunchMissingWindows: false)
+                    .ConfigureAwait(false);
                 return success ? 0 : 1;
             }
             catch (OperationCanceledException)
@@ -646,6 +658,12 @@ namespace TopToolbar.Providers
                 if (!hasApps && !hasTemplate)
                 {
                     // Hide legacy placeholder entries that cannot launch anything.
+                    continue;
+                }
+
+                if (!WorkspaceRuntimeSession.IsCurrentSession(workspace.RuntimeSessionId))
+                {
+                    // Workspace instances are session-scoped and should not survive app restart.
                     continue;
                 }
 

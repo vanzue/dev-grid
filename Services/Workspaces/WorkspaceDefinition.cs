@@ -30,6 +30,9 @@ namespace TopToolbar.Services.Workspaces
         [JsonPropertyName("focus-priority")]
         public List<string> FocusPriority { get; set; } = new();
 
+        [JsonPropertyName("focused-application-id")]
+        public string FocusedApplicationId { get; set; } = string.Empty;
+
         [JsonPropertyName("creation-time")]
         public long CreationTime { get; set; }
 
@@ -41,6 +44,12 @@ namespace TopToolbar.Services.Workspaces
 
         [JsonPropertyName("move-existing-windows")]
         public bool MoveExistingWindows { get; set; } = true;
+
+        [JsonPropertyName("runtime-session-only")]
+        public bool RuntimeSessionOnly { get; set; }
+
+        [JsonPropertyName("runtime-session-id")]
+        public string RuntimeSessionId { get; set; } = string.Empty;
 
         [JsonPropertyName("monitor-configuration")]
         public List<MonitorDefinition> Monitors { get; set; } = new();

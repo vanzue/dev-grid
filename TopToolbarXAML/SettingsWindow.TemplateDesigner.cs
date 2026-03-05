@@ -317,7 +317,7 @@ namespace TopToolbar
             void UpdateValidationState(ContentDialog dialogRef)
             {
                 var candidate = BuildCandidate();
-                TopToolbar.Services.Workspaces.TemplateDefinitionValidator.CanonicalizeInPlace(candidate);
+                TopToolbar.Services.Workspaces.TemplateDefinitionStandardizer.StandardizeInPlace(candidate);
                 var errors = TopToolbar.Services.Workspaces.TemplateDefinitionValidator.Validate(candidate);
                 if (errors.Count == 0)
                 {
@@ -496,7 +496,7 @@ namespace TopToolbar
             }
 
             var finalCandidate = BuildCandidate();
-            TopToolbar.Services.Workspaces.TemplateDefinitionValidator.CanonicalizeInPlace(finalCandidate);
+            TopToolbar.Services.Workspaces.TemplateDefinitionStandardizer.StandardizeInPlace(finalCandidate);
             var finalErrors = TopToolbar.Services.Workspaces.TemplateDefinitionValidator.Validate(finalCandidate);
             if (finalErrors.Count > 0)
             {
@@ -539,6 +539,18 @@ namespace TopToolbar
                     Slots = source.Layout?.Slots?.Select(CloneTemplateLayoutSlotDefinition).ToList() ?? new List<TopToolbar.Services.Workspaces.TemplateLayoutSlotDefinition>(),
                 },
                 Windows = source.Windows?.Select(CloneTemplateWindowDefinition).ToList() ?? new List<TopToolbar.Services.Workspaces.TemplateWindowDefinition>(),
+                Agent = new TopToolbar.Services.Workspaces.TemplateAgentDefinition
+                {
+                    Enabled = source.Agent?.Enabled ?? false,
+                    Name = source.Agent?.Name ?? "copilot",
+                    Command = source.Agent?.Command ?? string.Empty,
+                    WorkingDirectory = source.Agent?.WorkingDirectory ?? "{repo}",
+                },
+                Creation = new TopToolbar.Services.Workspaces.TemplateCreationDefinition
+                {
+                    CreateWorktreeByDefault = source.Creation?.CreateWorktreeByDefault ?? false,
+                    WorktreeBaseBranch = source.Creation?.WorktreeBaseBranch ?? "main",
+                },
             };
         }
 

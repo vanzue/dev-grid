@@ -170,7 +170,10 @@ namespace TopToolbar.Services.Display
                     return true;
                 }
 
-                if (!oldEntry.Bounds.Equals(newEntry.Bounds))
+                if (!oldEntry.DpiAwareRect.Equals(newEntry.DpiAwareRect)
+                    || !oldEntry.DpiUnawareRect.Equals(newEntry.DpiUnawareRect)
+                    || !oldEntry.DpiAwareWorkRect.Equals(newEntry.DpiAwareWorkRect)
+                    || !oldEntry.DpiUnawareWorkRect.Equals(newEntry.DpiUnawareWorkRect))
                 {
                     return true;
                 }
@@ -233,18 +236,25 @@ namespace TopToolbar.Services.Display
                             info.RcMonitor.Bottom - info.RcMonitor.Top
                         );
 
+                        var workArea = new DisplayRect(
+                            info.RcWork.Left,
+                            info.RcWork.Top,
+                            info.RcWork.Right - info.RcWork.Left,
+                            info.RcWork.Bottom - info.RcWork.Top
+                        );
+                        if (workArea.IsEmpty)
+                        {
+                            workArea = bounds;
+                        }
+
                         var scale = dpiX > 0 ? (double)dpiX / 96.0 : 1.0;
                         if (scale <= 0)
                         {
                             scale = 1.0;
                         }
 
-                        var dpiUnawareRect = new DisplayRect(
-                            (int)Math.Round(bounds.Left / scale),
-                            (int)Math.Round(bounds.Top / scale),
-                            (int)Math.Round(bounds.Width / scale),
-                            (int)Math.Round(bounds.Height / scale)
-                        );
+                        var dpiUnawareRect = ToDpiUnawareRect(bounds, scale);
+                        var dpiUnawareWorkRect = ToDpiUnawareRect(workArea, scale);
 
                         var id = string.IsNullOrWhiteSpace(info.SzDevice)
                             ? $"DISPLAY{index}"
@@ -257,7 +267,9 @@ namespace TopToolbar.Services.Display
                             index,
                             (int)dpiX,
                             bounds,
-                            dpiUnawareRect);
+                            dpiUnawareRect,
+                            workArea,
+                            dpiUnawareWorkRect);
 
                         snapshots.Add(monitor);
                         index++;
@@ -298,6 +310,20 @@ namespace TopToolbar.Services.Display
             }
 
             return (long)width * height;
+        }
+
+        private static DisplayRect ToDpiUnawareRect(DisplayRect rect, double scale)
+        {
+            if (rect.IsEmpty)
+            {
+                return rect;
+            }
+
+            return new DisplayRect(
+                (int)Math.Round(rect.Left / scale),
+                (int)Math.Round(rect.Top / scale),
+                (int)Math.Round(rect.Width / scale),
+                (int)Math.Round(rect.Height / scale));
         }
 
         private static string ResolveMonitorInstanceId(string monitorDeviceName, string fallbackId)

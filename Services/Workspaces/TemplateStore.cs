@@ -77,7 +77,7 @@ namespace TopToolbar.Services.Workspaces
         {
             ArgumentNullException.ThrowIfNull(template);
 
-            TemplateDefinitionValidator.CanonicalizeInPlace(template);
+            TemplateDefinitionStandardizer.StandardizeInPlace(template);
             var errors = TemplateDefinitionValidator.Validate(template);
             if (errors.Count > 0)
             {
@@ -149,7 +149,7 @@ namespace TopToolbar.Services.Workspaces
                     return null;
                 }
 
-                TemplateDefinitionValidator.CanonicalizeInPlace(template);
+                TemplateDefinitionStandardizer.StandardizeInPlace(template);
                 var errors = TemplateDefinitionValidator.Validate(template);
                 if (errors.Count == 0)
                 {

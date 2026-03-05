@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using TopToolbar.Logging;
@@ -147,11 +148,18 @@ namespace TopToolbar
 
             var command = args[0];
             var commandArgs = args.Skip(1).ToArray();
-            var suppressConsoleTrace = HasOption(commandArgs, "--quiet") || HasOption(commandArgs, "--json");
+            var suppressConsoleTrace = string.Equals(command, "mcp", StringComparison.OrdinalIgnoreCase)
+                || HasOption(commandArgs, "--quiet")
+                || HasOption(commandArgs, "--json");
             WorkspaceRuntimeConsoleOptions.EnableConsoleTrace = !suppressConsoleTrace;
 
             try
             {
+                if (string.Equals(command, "mcp", StringComparison.OrdinalIgnoreCase))
+                {
+                    return await HandleMcpCommandAsync(commandArgs).ConfigureAwait(false);
+                }
+
                 using var orchestrator = new WorkspaceTemplateOrchestrator();
                 switch (command.ToLowerInvariant())
                 {
@@ -180,6 +188,13 @@ namespace TopToolbar
         {
             if (args.Length > 0 && string.Equals(args[0], "show", StringComparison.OrdinalIgnoreCase))
             {
+                var unknown = GetUnknownOptions(args.Skip(2).ToArray(), "--json");
+                if (unknown.Count > 0)
+                {
+                    Console.Error.WriteLine($"Unknown option(s): {string.Join(", ", unknown)}.");
+                    return 2;
+                }
+
                 if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
                 {
                     Console.Error.WriteLine("Template name is required.");
@@ -204,13 +219,50 @@ namespace TopToolbar
                 return 0;
             }
 
-            if (args.Length > 0)
+            if (args.Length > 0 && string.Equals(args[0], "normalize", StringComparison.OrdinalIgnoreCase))
+            {
+                return await HandleTemplatesNormalizeCommandAsync(args.Skip(1).ToArray()).ConfigureAwait(false);
+            }
+
+            if (args.Length > 0 && string.Equals(args[0], "delete", StringComparison.OrdinalIgnoreCase))
+            {
+                return await HandleTemplatesDeleteCommandAsync(orchestrator, args.Skip(1).ToArray()).ConfigureAwait(false);
+            }
+
+            if (args.Length > 0 && string.Equals(args[0], "validate", StringComparison.OrdinalIgnoreCase))
+            {
+                return await HandleTemplatesValidateCommandAsync(orchestrator, args.Skip(1).ToArray()).ConfigureAwait(false);
+            }
+
+            if (args.Length > 0 && string.Equals(args[0], "update", StringComparison.OrdinalIgnoreCase))
+            {
+                return await HandleTemplatesUpdateCommandAsync(orchestrator, args.Skip(1).ToArray()).ConfigureAwait(false);
+            }
+
+            if (args.Length > 0 && !args[0].StartsWith("--", StringComparison.Ordinal))
             {
                 Console.Error.WriteLine($"Unknown templates subcommand '{args[0]}'.");
                 return 2;
             }
 
+            var listUnknown = GetUnknownOptions(args, "--json");
+            if (listUnknown.Count > 0)
+            {
+                Console.Error.WriteLine($"Unknown option(s): {string.Join(", ", listUnknown)}.");
+                return 2;
+            }
+
+            var outputJson = HasOption(args, "--json");
             var templates = await orchestrator.ListTemplatesAsync(default).ConfigureAwait(false);
+            if (outputJson)
+            {
+                var orderedJson = templates
+                    .OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                Console.WriteLine(JsonSerializer.Serialize(orderedJson, WorkspaceProviderJsonContext.Default.TemplateDefinitionArray));
+                return 0;
+            }
+
             foreach (var template in templates.OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase))
             {
                 var description = string.IsNullOrWhiteSpace(template.Description) ? string.Empty : template.Description;
@@ -218,6 +270,256 @@ namespace TopToolbar
             }
 
             return 0;
+        }
+
+        private static async Task<int> HandleTemplatesNormalizeCommandAsync(string[] args)
+        {
+            var unknown = GetUnknownOptions(args, "--dry-run", "--json", "--templates-dir");
+            if (unknown.Count > 0)
+            {
+                Console.Error.WriteLine($"Unknown option(s): {string.Join(", ", unknown)}.");
+                return 2;
+            }
+
+            var dryRun = HasOption(args, "--dry-run");
+            var json = HasOption(args, "--json");
+            var templatesDir = GetOptionValue(args, "--templates-dir");
+            var service = new TemplateNormalizationService(templatesDir);
+            var report = await service.NormalizeAllAsync(dryRun, default).ConfigureAwait(false);
+            if (json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(report));
+            }
+            else
+            {
+                Console.WriteLine($"directory={report.DirectoryPath}");
+                Console.WriteLine($"scanned={report.FilesScanned} normalized={report.FilesNormalized} unchanged={report.FilesUnchanged} failed={report.FilesFailed}");
+                foreach (var item in report.Items)
+                {
+                    var status = item.Success ? (item.Changed ? "normalized" : "unchanged") : "failed";
+                    Console.WriteLine($"{status}\t{item.TemplateName}\t{item.SourceFilePath}\t{item.Message}");
+                }
+            }
+
+            return report.FilesFailed > 0 ? 4 : 0;
+        }
+
+        private static async Task<int> HandleTemplatesDeleteCommandAsync(WorkspaceTemplateOrchestrator orchestrator, string[] args)
+        {
+            var unknown = GetUnknownOptions(args.Skip(1).ToArray(), "--json");
+            if (unknown.Count > 0)
+            {
+                Console.Error.WriteLine($"Unknown option(s): {string.Join(", ", unknown)}.");
+                return 2;
+            }
+
+            if (args.Length == 0 || string.IsNullOrWhiteSpace(args[0]))
+            {
+                Console.Error.WriteLine("Template name is required.");
+                return 2;
+            }
+
+            var outputJson = HasOption(args, "--json");
+            var deleted = await orchestrator.DeleteTemplateAsync(args[0], default).ConfigureAwait(false);
+            if (outputJson)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new
+                {
+                    deleted,
+                    templateName = WorkspaceStoragePaths.NormalizeTemplateName(args[0]),
+                }));
+            }
+            else
+            {
+                Console.WriteLine(deleted
+                    ? $"Template '{WorkspaceStoragePaths.NormalizeTemplateName(args[0])}' deleted."
+                    : $"Template '{WorkspaceStoragePaths.NormalizeTemplateName(args[0])}' was not found.");
+            }
+
+            return deleted ? 0 : 3;
+        }
+
+        private static async Task<int> HandleTemplatesValidateCommandAsync(WorkspaceTemplateOrchestrator orchestrator, string[] args)
+        {
+            var unknown = GetUnknownOptions(args.Skip(1).ToArray(), "--json");
+            if (unknown.Count > 0)
+            {
+                Console.Error.WriteLine($"Unknown option(s): {string.Join(", ", unknown)}.");
+                return 2;
+            }
+
+            if (args.Length == 0 || string.IsNullOrWhiteSpace(args[0]))
+            {
+                Console.Error.WriteLine("Template name is required.");
+                return 2;
+            }
+
+            var outputJson = HasOption(args, "--json");
+            var template = await orchestrator.GetTemplateAsync(args[0], default).ConfigureAwait(false);
+            if (template == null)
+            {
+                Console.Error.WriteLine($"Template '{args[0]}' was not found.");
+                return 3;
+            }
+
+            TemplateDefinitionStandardizer.StandardizeInPlace(template);
+            var errors = TemplateDefinitionValidator.Validate(template);
+            if (outputJson)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new
+                {
+                    valid = errors.Count == 0,
+                    templateName = template.Name,
+                    validationErrors = errors,
+                }));
+            }
+            else if (errors.Count == 0)
+            {
+                Console.WriteLine($"Template '{template.Name}' is valid.");
+            }
+            else
+            {
+                Console.Error.WriteLine(string.Join(Environment.NewLine, errors));
+            }
+
+            return errors.Count == 0 ? 0 : 2;
+        }
+
+        private static async Task<int> HandleTemplatesUpdateCommandAsync(WorkspaceTemplateOrchestrator orchestrator, string[] args)
+        {
+            var unknown = GetUnknownOptions(args.Skip(1).ToArray(), "--ops-file", "--json");
+            if (unknown.Count > 0)
+            {
+                Console.Error.WriteLine($"Unknown option(s): {string.Join(", ", unknown)}.");
+                return 2;
+            }
+
+            if (args.Length == 0 || string.IsNullOrWhiteSpace(args[0]))
+            {
+                Console.Error.WriteLine("Template name is required.");
+                return 2;
+            }
+
+            var opsFile = GetOptionValue(args, "--ops-file");
+            if (string.IsNullOrWhiteSpace(opsFile))
+            {
+                Console.Error.WriteLine("--ops-file is required.");
+                return 2;
+            }
+
+            if (!File.Exists(opsFile))
+            {
+                Console.Error.WriteLine($"Ops file '{opsFile}' was not found.");
+                return 2;
+            }
+
+            var templateName = args[0];
+            var outputJson = HasOption(args, "--json");
+
+            var template = await orchestrator.GetTemplateAsync(templateName, default).ConfigureAwait(false);
+            if (template == null)
+            {
+                Console.Error.WriteLine($"Template '{templateName}' was not found.");
+                return 3;
+            }
+
+            var raw = await File.ReadAllTextAsync(opsFile).ConfigureAwait(false);
+            var document = ParseUpdateDocument(raw, templateName);
+            if (!string.Equals(document.Syntax, "workspace-template-update/v1", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.Error.WriteLine("Ops document syntax must be 'workspace-template-update/v1'.");
+                return 2;
+            }
+
+            var normalizedTemplateName = WorkspaceStoragePaths.NormalizeTemplateName(templateName);
+            var normalizedDocumentTemplate = WorkspaceStoragePaths.NormalizeTemplateName(document.Template);
+            if (!string.IsNullOrWhiteSpace(normalizedDocumentTemplate)
+                && !string.Equals(normalizedTemplateName, normalizedDocumentTemplate, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.Error.WriteLine(
+                    $"Ops document template '{normalizedDocumentTemplate}' does not match command template '{normalizedTemplateName}'.");
+                return 2;
+            }
+
+            var apply = TemplateUpdateEngine.ApplyInPlace(template, document.Ops);
+            if (!apply.Success)
+            {
+                if (outputJson)
+                {
+                    Console.WriteLine(JsonSerializer.Serialize(new
+                    {
+                        updated = false,
+                        templateName = WorkspaceStoragePaths.NormalizeTemplateName(templateName),
+                        applyErrors = apply.Errors,
+                    }));
+                }
+                else
+                {
+                    Console.Error.WriteLine(string.Join(Environment.NewLine, apply.Errors));
+                }
+
+                return 2;
+            }
+
+            TemplateDefinitionStandardizer.StandardizeInPlace(template);
+            var errors = TemplateDefinitionValidator.Validate(template);
+            if (errors.Count > 0)
+            {
+                if (outputJson)
+                {
+                    Console.WriteLine(JsonSerializer.Serialize(new
+                    {
+                        updated = false,
+                        templateName = template.Name,
+                        validationErrors = errors,
+                    }));
+                }
+                else
+                {
+                    Console.Error.WriteLine(string.Join(Environment.NewLine, errors));
+                }
+
+                return 2;
+            }
+
+            await orchestrator.SaveTemplateAsync(template, default).ConfigureAwait(false);
+            var filePath = WorkspaceStoragePaths.GetTemplateFilePath(template.Name);
+            if (outputJson)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new
+                {
+                    updated = true,
+                    templateName = template.Name,
+                    filePath,
+                }));
+            }
+            else
+            {
+                Console.WriteLine($"Template '{template.Name}' updated.");
+            }
+
+            return 0;
+        }
+
+        private static async Task<int> HandleMcpCommandAsync(string[] args)
+        {
+            var unknown = GetUnknownOptions(args, "--templates-dir");
+            if (unknown.Count > 0)
+            {
+                Console.Error.WriteLine($"Unknown option(s): {string.Join(", ", unknown)}.");
+                return 2;
+            }
+
+            var templatesDir = GetOptionValue(args, "--templates-dir");
+            using var cancellation = new CancellationTokenSource();
+            Console.CancelKeyPress += (_, eventArgs) =>
+            {
+                eventArgs.Cancel = true;
+                cancellation.Cancel();
+            };
+
+            using var server = new TemplateMcpServer(templatesDir);
+            return await server.RunAsync(cancellation.Token).ConfigureAwait(false);
         }
 
         private static async Task<int> HandleNewCommandAsync(WorkspaceTemplateOrchestrator orchestrator, string[] args)
@@ -453,15 +755,96 @@ namespace TopToolbar
             return args.Any(arg => string.Equals(arg, option, StringComparison.OrdinalIgnoreCase));
         }
 
+        private static List<string> GetUnknownOptions(string[] args, params string[] allowedOptions)
+        {
+            var allowed = new HashSet<string>(allowedOptions ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            var unknown = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (args == null || args.Length == 0)
+            {
+                return unknown.ToList();
+            }
+
+            foreach (var arg in args)
+            {
+                if (string.IsNullOrWhiteSpace(arg) || !arg.StartsWith("--", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var option = arg;
+                var separator = arg.IndexOf('=');
+                if (separator > 2)
+                {
+                    option = arg[..separator];
+                }
+
+                if (!allowed.Contains(option))
+                {
+                    unknown.Add(option);
+                }
+            }
+
+            return unknown.OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        private static TemplateUpdateDocument ParseUpdateDocument(string rawJson, string fallbackTemplateName)
+        {
+            if (string.IsNullOrWhiteSpace(rawJson))
+            {
+                throw new ArgumentException("Ops file is empty.");
+            }
+
+            var document = JsonDocument.Parse(rawJson);
+            using (document)
+            {
+                var root = document.RootElement;
+                if (root.ValueKind == JsonValueKind.Array)
+                {
+                    var ops = JsonSerializer.Deserialize<List<TemplateUpdateOperation>>(root.GetRawText())
+                        ?? new List<TemplateUpdateOperation>();
+                    return new TemplateUpdateDocument
+                    {
+                        Syntax = "workspace-template-update/v1",
+                        Template = WorkspaceStoragePaths.NormalizeTemplateName(fallbackTemplateName),
+                        Ops = ops,
+                    };
+                }
+
+                if (root.ValueKind == JsonValueKind.Object)
+                {
+                    var parsed = JsonSerializer.Deserialize<TemplateUpdateDocument>(root.GetRawText())
+                        ?? new TemplateUpdateDocument();
+                    if (string.IsNullOrWhiteSpace(parsed.Template))
+                    {
+                        parsed.Template = WorkspaceStoragePaths.NormalizeTemplateName(fallbackTemplateName);
+                    }
+
+                    if (string.IsNullOrWhiteSpace(parsed.Syntax))
+                    {
+                        parsed.Syntax = "workspace-template-update/v1";
+                    }
+
+                    return parsed;
+                }
+            }
+
+            throw new ArgumentException("Ops file must be an object or array JSON document.");
+        }
+
         private static void PrintWorkspaceHelp()
         {
             Console.WriteLine("ws templates");
             Console.WriteLine("ws templates show <template>");
+            Console.WriteLine("ws templates delete <template> [--json]");
+            Console.WriteLine("ws templates validate <template> [--json]");
+            Console.WriteLine("ws templates update <template> --ops-file <path> [--json]");
+            Console.WriteLine("ws templates normalize [--dry-run] [--json] [--templates-dir <path>]");
             Console.WriteLine("ws new --template <template> --name \"<name>\" [--repo <path>] [--focus <roles>] [--no-launch]");
             Console.WriteLine("ws new --name \"<name>\" --repo <path> --preset <preset> [--focus <roles>] [--save-template <templateId>] [--no-launch]");
             Console.WriteLine("ws new --name \"<name>\" --layout <layout> --app \"role=...,exe=...\" [--app \"...\"] [--focus <roles>] [--save-template <templateId>] [--no-launch]");
             Console.WriteLine("ws switch --id <workspaceId> [--json] [--quiet]");
             Console.WriteLine("ws switch --template <template> --name \"<instanceName>\" [--json] [--quiet]");
+            Console.WriteLine("ws mcp [--templates-dir <path>]");
         }
 
         private static IReadOnlyList<string> ParseFocusRoles(string raw)

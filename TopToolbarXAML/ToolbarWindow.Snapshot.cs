@@ -29,18 +29,22 @@ namespace TopToolbar
             public string Description { get; set; } = string.Empty;
 
             public bool RequiresRepo { get; set; }
+
+            public bool CreateWorktreeByDefault { get; set; }
+
+            public string WorktreeBaseBranch { get; set; } = "main";
+
+            public string DefaultRepoRoot { get; set; } = string.Empty;
         }
 
         private sealed class CreateWorkspaceInput
         {
             public string TemplateName { get; set; } = string.Empty;
-
-            public string InstanceName { get; set; } = string.Empty;
-
-            public string RepoRoot { get; set; } = string.Empty;
         }
 
         public ObservableCollection<QuickTemplateOption> QuickTemplates { get; } = new();
+        private readonly SemaphoreSlim _quickTemplateLoadGate = new(1, 1);
+        private Task _quickTemplateWarmupTask = Task.CompletedTask;
 
         private async System.Threading.Tasks.Task HandleSnapshotButtonClickAsync(Button triggerButton)
         {
@@ -54,7 +58,7 @@ namespace TopToolbar
 
             try
             {
-                await EnsureQuickTemplatesLoadedAsync().ConfigureAwait(true);
+                await EnsureQuickTemplatesLoadedAsync(forceReload: false).ConfigureAwait(true);
 
                 if (QuickTemplates.Count == 0)
                 {
@@ -66,64 +70,57 @@ namespace TopToolbar
 
                 var input = await PromptCreateWorkspaceAsync(this, QuickTemplates.ToList()).ConfigureAwait(true);
                 if (input == null
-                    || string.IsNullOrWhiteSpace(input.TemplateName)
-                    || string.IsNullOrWhiteSpace(input.InstanceName))
+                    || string.IsNullOrWhiteSpace(input.TemplateName))
                 {
                     return;
                 }
 
+                Guid progressId = Guid.Empty;
                 try
                 {
+                    progressId = _notificationService.ShowProgress("Preparing window set...");
+                    var progress = new Progress<string>(message =>
+                    {
+                        if (string.IsNullOrWhiteSpace(message))
+                        {
+                            return;
+                        }
+
+                        _notificationService.UpdateProgress(progressId, message);
+                    });
+
                     using var orchestrator = new WorkspaceTemplateOrchestrator();
                     var create = await orchestrator.CreateWorkspaceAsync(
                         new WorkspaceTemplateOrchestrator.CreateWorkspaceRequest
                         {
                             TemplateName = input.TemplateName,
-                            InstanceName = input.InstanceName,
-                            RepoRoot = input.RepoRoot,
                             NoLaunch = false,
+                            EphemeralLaunch = true,
+                            Progress = progress,
                         },
                         CancellationToken.None).ConfigureAwait(false);
 
                     if (!create.Success)
                     {
-                        await ShowSimpleMessageOnUiThreadAsync(
-                            "Create workspace failed",
-                            create.Message
-                        );
+                        _notificationService.CompleteProgress(
+                            progressId,
+                            $"Launch failed: {create.Message}",
+                            isError: true);
                         return;
                     }
 
-                    await ShowSimpleMessageOnUiThreadAsync(
-                        "Workspace created",
-                        create.Message);
-
-                    var dispatcher = DispatcherQueue;
-                    if (dispatcher != null && !dispatcher.HasThreadAccess)
-                    {
-                        var tcs = new TaskCompletionSource<bool>();
-                        if (!dispatcher.TryEnqueue(async () =>
-                        {
-                            await RefreshWorkspaceGroupAsync();
-                            tcs.TrySetResult(true);
-                        }))
-                        {
-                            // Fallback, run synchronously if enqueue fails
-                            await RefreshWorkspaceGroupAsync();
-                        }
-                        else
-                        {
-                            await tcs.Task.ConfigureAwait(true);
-                        }
-                    }
-                    else
-                    {
-                        await RefreshWorkspaceGroupAsync();
-                    }
+                    _notificationService.CompleteProgress(progressId, $"Window set launched: {create.Message}");
                 }
                 catch (Exception ex)
                 {
-                    await ShowSimpleMessageOnUiThreadAsync("Create workspace failed", ex.Message);
+                    if (progressId != Guid.Empty)
+                    {
+                        _notificationService.CompleteProgress(progressId, $"Launch failed: {ex.Message}", isError: true);
+                    }
+                    else
+                    {
+                        await ShowSimpleMessageOnUiThreadAsync("Launch failed", ex.Message);
+                    }
                 }
             }
             catch (Exception ex)
@@ -206,37 +203,70 @@ namespace TopToolbar
                 return;
             }
 
-            IReadOnlyList<QuickTemplateOption> templates = Array.Empty<QuickTemplateOption>();
+            await _quickTemplateLoadGate.WaitAsync().ConfigureAwait(false);
             try
             {
-                using var orchestrator = new WorkspaceTemplateOrchestrator();
-                var list = await orchestrator.ListTemplatesAsync(CancellationToken.None).ConfigureAwait(false);
-                templates = list
-                    .Where(t => t != null && !string.IsNullOrWhiteSpace(t.Name))
-                    .Select(t => new QuickTemplateOption
+                if (!forceReload && QuickTemplates.Count > 0)
+                {
+                    return;
+                }
+
+                IReadOnlyList<QuickTemplateOption> templates = Array.Empty<QuickTemplateOption>();
+                try
+                {
+                    using var orchestrator = new WorkspaceTemplateOrchestrator();
+                    var list = await orchestrator.ListTemplatesAsync(CancellationToken.None).ConfigureAwait(false);
+                    templates = list
+                        .Where(t => t != null && !string.IsNullOrWhiteSpace(t.Name))
+                        .Select(t => new QuickTemplateOption
+                        {
+                            Name = t.Name,
+                            DisplayName = string.IsNullOrWhiteSpace(t.DisplayName) ? t.Name : t.DisplayName,
+                            RequiresRepo = t.RequiresRepo,
+                            CreateWorktreeByDefault = t.Creation?.CreateWorktreeByDefault ?? false,
+                            WorktreeBaseBranch = string.IsNullOrWhiteSpace(t.Creation?.WorktreeBaseBranch)
+                                ? "main"
+                                : t.Creation.WorktreeBaseBranch,
+                            DefaultRepoRoot = t.DefaultRepoRoot ?? string.Empty,
+                        })
+                        .OrderBy(t => t.DisplayName, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                }
+                catch
+                {
+                    templates = Array.Empty<QuickTemplateOption>();
+                }
+
+                await RunOnUiThreadAsync(() =>
+                {
+                    QuickTemplates.Clear();
+                    foreach (var template in templates)
                     {
-                        Name = t.Name,
-                        DisplayName = string.IsNullOrWhiteSpace(t.DisplayName) ? t.Name : t.DisplayName,
-                        Description = t.Description ?? string.Empty,
-                        RequiresRepo = t.RequiresRepo,
-                    })
-                    .OrderBy(t => t.DisplayName, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
+                        QuickTemplates.Add(template);
+                    }
+                    UpdateNewWorkspaceButtonState();
+                }).ConfigureAwait(true);
             }
-            catch
+            finally
             {
-                templates = Array.Empty<QuickTemplateOption>();
+                _quickTemplateLoadGate.Release();
+            }
+        }
+
+        internal void WarmQuickTemplatesInBackground(bool forceReload = false)
+        {
+            if (!forceReload && _quickTemplateWarmupTask != null && !_quickTemplateWarmupTask.IsCompleted)
+            {
+                return;
             }
 
-            await RunOnUiThreadAsync(() =>
-            {
-                QuickTemplates.Clear();
-                foreach (var template in templates)
-                {
-                    QuickTemplates.Add(template);
-                }
-                UpdateNewWorkspaceButtonState();
-            }).ConfigureAwait(true);
+            var warmup = EnsureQuickTemplatesLoadedAsync(forceReload);
+            _quickTemplateWarmupTask = warmup;
+            _ = warmup.ContinueWith(
+                _ => { },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
         }
 
         private void UpdateNewWorkspaceButtonState()
@@ -263,7 +293,7 @@ namespace TopToolbar
             ToolTipService.SetToolTip(
                 NewWorkspaceButton,
                 enabled
-                    ? "Create workspace from template"
+                    ? "Launch a window set from template"
                     : "Configure templates in Settings first");
             if (NewWorkspaceLabel != null)
             {
@@ -288,11 +318,6 @@ namespace TopToolbar
 
             using var overlayScope = ContentDialogOverlayScope.Transparent();
 
-            var instanceNameBox = new TextBox
-            {
-                PlaceholderText = "Workspace name",
-                MinWidth = 280,
-            };
             var templatePicker = new ComboBox
             {
                 MinWidth = 280,
@@ -301,28 +326,15 @@ namespace TopToolbar
                 PlaceholderText = "Select template",
                 SelectedIndex = 0,
             };
-            var repoRootBox = new TextBox
-            {
-                PlaceholderText = "Repository path (optional)",
-                MinWidth = 280,
-            };
-            var descriptionBlock = new TextBlock
-            {
-                TextWrapping = TextWrapping.Wrap,
-                Opacity = 0.75,
-            };
 
             var content = new StackPanel { Spacing = 12 };
             content.Children.Add(templatePicker);
-            content.Children.Add(descriptionBlock);
-            content.Children.Add(instanceNameBox);
-            content.Children.Add(repoRootBox);
 
             var dialog = new ContentDialog
             {
                 XamlRoot = overlay.Root.XamlRoot,
-                Title = "Create workspace",
-                PrimaryButtonText = "Create",
+                Title = "Launch window set",
+                PrimaryButtonText = "Launch",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary,
                 Content = content,
@@ -332,31 +344,12 @@ namespace TopToolbar
             {
                 var selectedTemplate = templatePicker.SelectedItem as QuickTemplateOption
                     ?? templates.FirstOrDefault();
-                var hasName = !string.IsNullOrWhiteSpace(instanceNameBox.Text);
-                var hasRepo = !string.IsNullOrWhiteSpace(repoRootBox.Text);
-                var repoValid = selectedTemplate?.RequiresRepo != true || hasRepo;
-                dialog.IsPrimaryButtonEnabled = hasName && repoValid;
-
-                if (selectedTemplate == null)
-                {
-                    descriptionBlock.Text = "No template selected.";
-                    repoRootBox.PlaceholderText = "Repository path";
-                }
-                else
-                {
-                    descriptionBlock.Text = string.IsNullOrWhiteSpace(selectedTemplate.Description)
-                        ? $"Template: {selectedTemplate.DisplayName}"
-                        : selectedTemplate.Description;
-                    repoRootBox.PlaceholderText = selectedTemplate.RequiresRepo
-                        ? "Repository path (required)"
-                        : "Repository path (optional)";
-                }
+                dialog.IsPrimaryButtonEnabled = selectedTemplate != null;
             }
 
             dialog.IsPrimaryButtonEnabled = false;
             templatePicker.SelectionChanged += (_, __) => UpdateEnabled();
-            instanceNameBox.TextChanged += (_, __) => UpdateEnabled();
-            repoRootBox.TextChanged += (_, __) => UpdateEnabled();
+
             UpdateEnabled();
 
             var result = await dialog.ShowAsync(ContentDialogPlacement.Popup);
@@ -375,8 +368,6 @@ namespace TopToolbar
             return new CreateWorkspaceInput
             {
                 TemplateName = selected.Name,
-                InstanceName = instanceNameBox.Text?.Trim() ?? string.Empty,
-                RepoRoot = repoRootBox.Text?.Trim() ?? string.Empty,
             };
         }
 

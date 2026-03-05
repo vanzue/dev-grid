@@ -172,6 +172,15 @@ namespace TopToolbar.Services.Workspaces
             set => SetProperty(ref _canLaunchElevated, value);
         }
 
+        private bool _launchNewIfUnbound;
+
+        [JsonPropertyName("launch-new-if-unbound")]
+        public bool LaunchNewIfUnbound
+        {
+            get => _launchNewIfUnbound;
+            set => SetProperty(ref _launchNewIfUnbound, value);
+        }
+
         private bool _minimized;
 
         [JsonPropertyName("minimized")]

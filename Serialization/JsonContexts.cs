@@ -41,6 +41,7 @@ internal partial class ExtensionManifestJsonContext : JsonSerializerContext
 [JsonSerializable(typeof(TopToolbar.Services.Workspaces.WorkspaceDefinition))]
 [JsonSerializable(typeof(TopToolbar.Services.Workspaces.WorkspaceDocument))]
 [JsonSerializable(typeof(TopToolbar.Services.Workspaces.TemplateDefinition))]
+[JsonSerializable(typeof(TopToolbar.Services.Workspaces.TemplateDefinition[]))]
 [JsonSerializable(typeof(TopToolbar.Services.Workspaces.WorkspaceSwitchDiagnostics))]
 internal partial class WorkspaceProviderJsonContext : JsonSerializerContext
 {

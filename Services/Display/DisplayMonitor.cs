@@ -12,7 +12,9 @@ namespace TopToolbar.Services.Display
             int index,
             int dpi,
             DisplayRect dpiAwareRect,
-            DisplayRect dpiUnawareRect)
+            DisplayRect dpiUnawareRect,
+            DisplayRect dpiAwareWorkRect,
+            DisplayRect dpiUnawareWorkRect)
         {
             Id = id ?? string.Empty;
             InstanceId = instanceId ?? string.Empty;
@@ -20,6 +22,8 @@ namespace TopToolbar.Services.Display
             Dpi = dpi;
             DpiAwareRect = dpiAwareRect;
             DpiUnawareRect = dpiUnawareRect;
+            DpiAwareWorkRect = dpiAwareWorkRect.IsEmpty ? dpiAwareRect : dpiAwareWorkRect;
+            DpiUnawareWorkRect = dpiUnawareWorkRect.IsEmpty ? dpiUnawareRect : dpiUnawareWorkRect;
         }
 
         public string Id { get; }
@@ -33,6 +37,10 @@ namespace TopToolbar.Services.Display
         public DisplayRect DpiAwareRect { get; }
 
         public DisplayRect DpiUnawareRect { get; }
+
+        public DisplayRect DpiAwareWorkRect { get; }
+
+        public DisplayRect DpiUnawareWorkRect { get; }
 
         public DisplayRect Bounds => DpiAwareRect;
     }

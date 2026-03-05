@@ -13,8 +13,11 @@ namespace TopToolbar.Services.Windowing
         private const int SwShowNormal = 1;
         private const int SwShowMinimized = 2;
         private const int SwShowMaximized = 3;
+        private const uint SwpNoSize = 0x0001;
+        private const uint SwpNoMove = 0x0002;
         private const uint SwpNoZOrder = 0x0004;
         private const uint SwpNoActivate = 0x0010;
+        private const uint SwpShowWindow = 0x0040;
         private const uint GwOwner = 4;
         private const int GwlpStyle = -16;
         private const int GwlpExStyle = -20;
@@ -32,6 +35,8 @@ namespace TopToolbar.Services.Windowing
         private const int WindowPlacementRetryDelayMilliseconds = 150;
         private const int WindowPlacementRetryAttempts = 30;
         private const int WindowPlacementTolerancePixels = 8;
+        private static readonly IntPtr HwndTopMost = new(-1);
+        private static readonly IntPtr HwndNoTopMost = new(-2);
 
         private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
 
@@ -85,6 +90,9 @@ namespace TopToolbar.Services.Windowing
 
         [DllImport("user32.dll")]
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int GetWindowTextLength(IntPtr hWnd);

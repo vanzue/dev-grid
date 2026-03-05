@@ -21,6 +21,8 @@ namespace TopToolbar.Services.Workspaces
     {
         private const int SaveRetryCount = 6;
         private const int SaveRetryDelayMilliseconds = 60;
+        private static readonly object SessionPruneLock = new();
+        private static bool _sessionRuntimePruneAttempted;
         private readonly string _filePath;
         private readonly WorkspaceProviderConfigStore _configStore;
 
@@ -270,7 +272,130 @@ namespace TopToolbar.Services.Workspaces
                 }
             }
 
+            await ApplySessionRuntimePruneIfNeededAsync(snapshot.Document, cancellationToken).ConfigureAwait(false);
+
             return snapshot.Document;
+        }
+
+        internal async Task PruneStaleRuntimeWorkspacesOnceAsync(CancellationToken cancellationToken)
+        {
+            var snapshot = await LoadDocumentSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            await ApplySessionRuntimePruneIfNeededAsync(snapshot.Document, cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task ApplySessionRuntimePruneIfNeededAsync(
+            WorkspaceDocument document,
+            CancellationToken cancellationToken)
+        {
+            if (!TryBeginSessionRuntimePrune())
+            {
+                return;
+            }
+
+            var removed = PruneCrossSessionRuntimeWorkspaces(document);
+            if (removed > 0)
+            {
+                AppLogger.LogInfo($"WorkspaceDefinitionStore: pruned {removed} stale runtime workspace(s) from previous session.");
+                try
+                {
+                    await SaveDocumentWithRetryAsync(document, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.LogWarning($"WorkspaceDefinitionStore: failed to persist runtime workspace prune - {ex.Message}");
+                }
+            }
+
+            await CleanupOrphanedWorkspaceButtonsAsync(document, cancellationToken).ConfigureAwait(false);
+        }
+
+        private static bool TryBeginSessionRuntimePrune()
+        {
+            lock (SessionPruneLock)
+            {
+                if (_sessionRuntimePruneAttempted)
+                {
+                    return false;
+                }
+
+                _sessionRuntimePruneAttempted = true;
+                return true;
+            }
+        }
+
+        private static int PruneCrossSessionRuntimeWorkspaces(WorkspaceDocument document)
+        {
+            if (document?.Workspaces == null || document.Workspaces.Count == 0)
+            {
+                return 0;
+            }
+
+            return document.Workspaces.RemoveAll(IsCrossSessionRuntimeWorkspace);
+        }
+
+        private static bool IsCrossSessionRuntimeWorkspace(WorkspaceDefinition workspace)
+        {
+            if (workspace == null)
+            {
+                return false;
+            }
+
+            // Workspace instances are runtime/session concepts. Anything not stamped
+            // with the current session id should be removed on startup.
+            return !WorkspaceRuntimeSession.IsCurrentSession(workspace.RuntimeSessionId);
+        }
+
+        private async Task CleanupOrphanedWorkspaceButtonsAsync(
+            WorkspaceDocument document,
+            CancellationToken cancellationToken)
+        {
+            if (_configStore == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+                if (config?.Buttons == null || config.Buttons.Count == 0)
+                {
+                    return;
+                }
+
+                var activeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var workspaces = document?.Workspaces ?? new List<WorkspaceDefinition>();
+                foreach (var workspace in workspaces)
+                {
+                    if (workspace == null || string.IsNullOrWhiteSpace(workspace.Id))
+                    {
+                        continue;
+                    }
+
+                    activeIds.Add(workspace.Id);
+                }
+
+                var removed = config.Buttons.RemoveAll(button =>
+                {
+                    if (button == null || string.IsNullOrWhiteSpace(button.WorkspaceId))
+                    {
+                        return false;
+                    }
+
+                    return !activeIds.Contains(button.WorkspaceId.Trim());
+                });
+
+                if (removed <= 0)
+                {
+                    return;
+                }
+
+                await _configStore.SaveAsync(config, cancellationToken).ConfigureAwait(false);
+                AppLogger.LogInfo($"WorkspaceDefinitionStore: removed {removed} orphaned workspace button(s) for stale sessions.");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"WorkspaceDefinitionStore: cleanup orphaned workspace buttons failed - {ex.Message}");
+            }
         }
 
         private async Task<DocumentSnapshot> LoadDocumentSnapshotAsync(CancellationToken cancellationToken)

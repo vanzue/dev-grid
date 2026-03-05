@@ -17,11 +17,45 @@ namespace TopToolbar.Services.Workspaces
         /// <summary>
         /// Phase 2: Resize a window to its target position
         /// </summary>
+        private async Task<bool> ResizeWindowWithTimeoutAsync(
+            IntPtr handle,
+            ApplicationDefinition app,
+            WindowPlacement targetPosition,
+            bool launchedNew,
+            IReadOnlyDictionary<IntPtr, bool> workspaceWindowMinimizeStates,
+            CancellationToken cancellationToken)
+        {
+            const int resizeTimeoutSeconds = 15;
+            var appLabel = DescribeApp(app);
+            try
+            {
+                return await ResizeWindowAsync(
+                        handle,
+                        app,
+                        targetPosition,
+                        launchedNew,
+                        workspaceWindowMinimizeStates,
+                        cancellationToken)
+                    .WaitAsync(TimeSpan.FromSeconds(resizeTimeoutSeconds), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                AppLogger.LogWarning(
+                    $"WorkspaceRuntime: [{appLabel}] Resize timed out after {resizeTimeoutSeconds}s; continuing with partial arrange.");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Phase 2: Resize a window to its target position
+        /// </summary>
         private async Task<bool> ResizeWindowAsync(
             IntPtr handle,
             ApplicationDefinition app,
             WindowPlacement targetPosition,
             bool launchedNew,
+            IReadOnlyDictionary<IntPtr, bool> workspaceWindowMinimizeStates,
             CancellationToken cancellationToken
         )
         {
@@ -38,7 +72,11 @@ namespace TopToolbar.Services.Workspaces
 
             try
             {
-                if (!EnsureWindowOnCurrentDesktop(handle, appLabel, "Resize"))
+                if (!EnsureWindowOnCurrentDesktop(
+                    handle,
+                    appLabel,
+                    "Resize",
+                    allowUnknownDesktopState: true))
                 {
                     return false;
                 }
@@ -49,6 +87,21 @@ namespace TopToolbar.Services.Workspaces
                 }
 
                 LogPerf($"WorkspaceRuntime: [{appLabel}] Resize - begin: minimized={app.Minimized}, maximized={app.Maximized}, position=({app.Position?.X},{app.Position?.Y},{app.Position?.Width},{app.Position?.Height})");
+
+                // For minimized windows in switch mode, speed matters more than exact geometry.
+                // Apply minimize directly and skip costly placement verification loops.
+                if (app.Minimized)
+                {
+                    NativeWindowHelper.MinimizeWindow(handle);
+                    if (ShouldMinimizeSiblingProcessWindows(app))
+                    {
+                        MinimizeSiblingProcessWindows(handle, appLabel, workspaceWindowMinimizeStates);
+                    }
+
+                    sw.Stop();
+                    LogPerf($"WorkspaceRuntime: [{appLabel}] Resize - fast-path minimized in {sw.ElapsedMilliseconds} ms");
+                    return true;
+                }
 
                 var position = !targetPosition.IsEmpty ? targetPosition : default;
 
@@ -68,17 +121,12 @@ namespace TopToolbar.Services.Workspaces
                     await PostSettleWindowAsync(handle, position, app.Maximized, app.Minimized, cancellationToken)
                         .ConfigureAwait(false);
                 }
-                else if (app.Minimized || app.Maximized)
+                else if (app.Maximized)
                 {
                     // Existing windows can ignore a single ShowWindow call (especially multi-window apps).
                     // Verify and retry until expected state is reached or timeout expires.
                     await MakeSureWindowArrangedAsync(handle, position, app.Maximized, app.Minimized, cancellationToken)
                         .ConfigureAwait(false);
-                }
-
-                if (app.Minimized)
-                {
-                    MinimizeSiblingProcessWindows(handle, appLabel);
                 }
 
                 sw.Stop();
@@ -97,11 +145,19 @@ namespace TopToolbar.Services.Workspaces
             }
         }
 
-        private void MinimizeSiblingProcessWindows(IntPtr primaryHandle, string appLabel)
+        private void MinimizeSiblingProcessWindows(
+            IntPtr primaryHandle,
+            string appLabel,
+            IReadOnlyDictionary<IntPtr, bool> workspaceWindowMinimizeStates)
         {
             try
             {
                 if (primaryHandle == IntPtr.Zero)
+                {
+                    return;
+                }
+
+                if (workspaceWindowMinimizeStates == null || workspaceWindowMinimizeStates.Count == 0)
                 {
                     return;
                 }
@@ -122,6 +178,12 @@ namespace TopToolbar.Services.Workspaces
                 foreach (var hwnd in siblingHandles)
                 {
                     if (hwnd == IntPtr.Zero || hwnd == primaryHandle)
+                    {
+                        continue;
+                    }
+
+                    if (!workspaceWindowMinimizeStates.TryGetValue(hwnd, out var shouldBeMinimized)
+                        || !shouldBeMinimized)
                     {
                         continue;
                     }
@@ -156,6 +218,27 @@ namespace TopToolbar.Services.Workspaces
             }
         }
 
+        private static bool ShouldMinimizeSiblingProcessWindows(ApplicationDefinition app)
+        {
+            if (app == null)
+            {
+                return false;
+            }
+
+            // Windows Terminal has multiple independent top-level windows in one process.
+            // Minimizing "siblings" can hide a different terminal that should remain visible
+            // according to the snapshot.
+            if (IsExecutable(app.Path, "WindowsTerminal.exe")
+                || IsExecutable(app.Name, "WindowsTerminal.exe")
+                || IsExecutable(app.Path, "wt.exe")
+                || IsExecutable(app.Name, "wt.exe"))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         private HashSet<uint> GetWorkspaceProcessIds(IReadOnlyCollection<EnsureAppResult> successfulApps)
         {
             var processIds = new HashSet<uint>();
@@ -184,22 +267,33 @@ namespace TopToolbar.Services.Workspaces
 
         private int MinimizeExtraneousWindows(
             HashSet<IntPtr> workspaceHandles,
-            HashSet<uint> workspaceProcessIds)
+            HashSet<uint> workspaceProcessIds,
+            CancellationToken cancellationToken)
         {
             var minimizedCount = 0;
             try
             {
                 var currentProcessId = (uint)Environment.ProcessId;
                 var snapshot = _windowManager.GetSnapshot();
+                var phaseSw = Stopwatch.StartNew();
 
                 foreach (var window in snapshot)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    if (phaseSw.Elapsed > MinimizeExtraneousBudget)
+                    {
+                        AppLogger.LogWarning(
+                            $"WorkspaceRuntime: Phase 3 minimize budget reached after {phaseSw.ElapsedMilliseconds} ms; minimized={minimizedCount}, remaining windows skipped.");
+                        break;
+                    }
+
                     if (window.ProcessId == currentProcessId)
                     {
                         continue;
                     }
 
-                    if (workspaceHandles.Contains(window.Handle))
+                    if (workspaceHandles != null && workspaceHandles.Contains(window.Handle))
                     {
                         continue;
                     }
@@ -214,13 +308,15 @@ namespace TopToolbar.Services.Workspaces
                         continue;
                     }
 
-                    if (!NativeWindowHelper.TryIsWindowOnCurrentVirtualDesktop(window.Handle, out var isOnCurrentDesktop))
+                    var desktopAvailability = TryGetWindowDesktopAvailabilitySafe(window.Handle);
+                    if (desktopAvailability != DesktopAvailability.Current)
                     {
-                        continue;
-                    }
+                        if (desktopAvailability == DesktopAvailability.Unknown)
+                        {
+                            AppLogger.LogWarning(
+                                $"WorkspaceRuntime: desktop query unavailable for window handle={window.Handle}; skipping minimize for safety.");
+                        }
 
-                    if (!isOnCurrentDesktop)
-                    {
                         continue;
                     }
 
@@ -235,6 +331,10 @@ namespace TopToolbar.Services.Workspaces
                         $"WorkspaceRuntime: Phase 3 - minimized extraneous window handle={window.Handle}, processId={window.ProcessId}, title='{window.Title}'");
                 }
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 AppLogger.LogWarning(
@@ -243,6 +343,45 @@ namespace TopToolbar.Services.Workspaces
             }
 
             return minimizedCount;
+        }
+
+        private static DesktopAvailability TryGetWindowDesktopAvailabilitySafe(IntPtr handle)
+        {
+            if (handle == IntPtr.Zero)
+            {
+                return DesktopAvailability.Unknown;
+            }
+
+            try
+            {
+                var task = Task.Run(() =>
+                {
+                    var queryOk = NativeWindowHelper.TryIsWindowOnCurrentVirtualDesktop(handle, out var onCurrentDesktop);
+                    if (!queryOk)
+                    {
+                        return DesktopAvailability.Unknown;
+                    }
+
+                    return onCurrentDesktop
+                        ? DesktopAvailability.Current
+                        : DesktopAvailability.Other;
+                });
+
+                if (!task.Wait(TimeSpan.FromMilliseconds(200)))
+                {
+                    AppLogger.LogWarning(
+                        $"WorkspaceRuntime: desktop query timeout for window handle={handle}.");
+                    return DesktopAvailability.Unknown;
+                }
+
+                return task.Result;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning(
+                    $"WorkspaceRuntime: desktop query failed for window handle={handle} - {ex.Message}");
+                return DesktopAvailability.Unknown;
+            }
         }
 
         private async Task MakeSureWindowArrangedAsync(
@@ -305,7 +444,11 @@ namespace TopToolbar.Services.Workspaces
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (!EnsureWindowOnCurrentDesktop(handle, "<post-settle>", "PostSettle"))
+                if (!EnsureWindowOnCurrentDesktop(
+                    handle,
+                    "<post-settle>",
+                    "PostSettle",
+                    allowUnknownDesktopState: true))
                 {
                     return;
                 }

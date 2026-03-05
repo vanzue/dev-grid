@@ -28,20 +28,94 @@ namespace TopToolbar.Services
 
         public TimeSpan SuccessDuration { get; set; } = TimeSpan.FromSeconds(4);
 
-        public void ShowError(string message) => Show(NotificationKind.Error, message, DefaultDuration);
+        public void ShowError(string message) => _ = Show(NotificationKind.Error, message, DefaultDuration);
 
-        public void ShowWarning(string message) => Show(NotificationKind.Warning, message, DefaultDuration);
+        public void ShowWarning(string message) => _ = Show(NotificationKind.Warning, message, DefaultDuration);
 
-        public void ShowInfo(string message) => Show(NotificationKind.Info, message, DefaultDuration);
+        public void ShowInfo(string message) => _ = Show(NotificationKind.Info, message, DefaultDuration);
 
-        public void ShowSuccess(string message) => Show(NotificationKind.Info, message, SuccessDuration);
+        public void ShowSuccess(string message) => _ = Show(NotificationKind.Success, message, SuccessDuration);
 
-        private void Show(NotificationKind kind, string message, TimeSpan duration)
+        public Guid ShowProgress(string message) => Show(NotificationKind.Progress, message, null);
+
+        public void UpdateProgress(Guid notificationId, string message)
         {
+            if (notificationId == Guid.Empty)
+            {
+                return;
+            }
+
             var normalized = NormalizeMessage(message);
             if (string.IsNullOrWhiteSpace(normalized))
             {
                 return;
+            }
+
+            RunOnUi(() =>
+            {
+                var index = FindItemIndex(notificationId);
+                if (index < 0)
+                {
+                    return;
+                }
+
+                var current = Items[index];
+                Items[index] = current.WithMessage(current.Kind, normalized);
+            });
+        }
+
+        public void CompleteProgress(Guid notificationId, string message, bool isError = false)
+        {
+            if (notificationId == Guid.Empty)
+            {
+                if (isError)
+                {
+                    ShowError(message);
+                }
+                else
+                {
+                    ShowSuccess(message);
+                }
+
+                return;
+            }
+
+            var normalized = NormalizeMessage(message);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                normalized = isError ? "Operation failed." : "Operation completed.";
+            }
+
+            RunOnUi(() =>
+            {
+                var index = FindItemIndex(notificationId);
+                if (index < 0)
+                {
+                    if (isError)
+                    {
+                        _ = Show(NotificationKind.Error, normalized, DefaultDuration);
+                    }
+                    else
+                    {
+                        _ = Show(NotificationKind.Success, normalized, SuccessDuration);
+                    }
+
+                    return;
+                }
+
+                var targetKind = isError ? NotificationKind.Error : NotificationKind.Success;
+                var current = Items[index];
+                Items[index] = current.WithMessage(targetKind, normalized);
+                StartOrResetTimer(notificationId, isError ? DefaultDuration : SuccessDuration);
+            });
+        }
+
+        private Guid Show(NotificationKind kind, string message, TimeSpan? duration)
+        {
+            var normalized = NormalizeMessage(message);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return Guid.Empty;
             }
 
             var item = new NotificationItem(kind, normalized);
@@ -51,23 +125,15 @@ namespace TopToolbar.Services
                 Items.Insert(0, item);
                 TrimOverflow();
 
-                if (_dispatcher == null)
+                if (!duration.HasValue)
                 {
                     return;
                 }
 
-                var timer = _dispatcher.CreateTimer();
-                timer.Interval = duration;
-                timer.IsRepeating = false;
-                timer.Tick += (_, __) =>
-                {
-                    timer.Stop();
-                    Remove(item.Id);
-                };
-
-                _timers[item.Id] = timer;
-                timer.Start();
+                StartOrResetTimer(item.Id, duration.Value);
             });
+
+            return item.Id;
         }
 
         private void TrimOverflow()
@@ -104,6 +170,41 @@ namespace TopToolbar.Services
                 timer.Stop();
                 _timers.Remove(id);
             }
+        }
+
+        private void StartOrResetTimer(Guid id, TimeSpan duration)
+        {
+            StopTimer(id);
+
+            if (_dispatcher == null)
+            {
+                return;
+            }
+
+            var timer = _dispatcher.CreateTimer();
+            timer.Interval = duration;
+            timer.IsRepeating = false;
+            timer.Tick += (_, __) =>
+            {
+                timer.Stop();
+                Remove(id);
+            };
+
+            _timers[id] = timer;
+            timer.Start();
+        }
+
+        private int FindItemIndex(Guid id)
+        {
+            for (int i = 0; i < Items.Count; i++)
+            {
+                if (Items[i].Id == id)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
         }
 
         private void RunOnUi(Action action)

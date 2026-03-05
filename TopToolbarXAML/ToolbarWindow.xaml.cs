@@ -154,7 +154,7 @@ namespace TopToolbar
                 await _vm.LoadAsync(this.DispatcherQueue);
                 await RunOnUiThreadAsync(SyncStaticGroupsIntoStore);
                 await RefreshDynamicProviderGroupsAsync(CancellationToken.None);
-                await EnsureQuickTemplatesLoadedAsync(forceReload: true);
+                WarmQuickTemplatesInBackground(forceReload: true);
 
                 await RunOnUiThreadAsync(() =>
                 {

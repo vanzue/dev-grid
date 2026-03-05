@@ -76,6 +76,15 @@ namespace TopToolbar.Services.Workspaces
             var windows = _windowManager.GetSnapshot();
             var applications = new List<ApplicationDefinition>();
             var windowBindings = new Dictionary<string, IntPtr>(StringComparer.OrdinalIgnoreCase);
+            var focusedHandle = IntPtr.Zero;
+            WindowInfo focusedWindowInfo = null;
+            if (NativeWindowHelper.TryGetForegroundWindowHandle(out var currentForeground))
+            {
+                focusedHandle = currentForeground;
+                _ = NativeWindowHelper.TryCreateWindowInfo(focusedHandle, out focusedWindowInfo);
+            }
+
+            string focusedApplicationId = string.Empty;
 
             foreach (var window in windows)
             {
@@ -106,6 +115,12 @@ namespace TopToolbar.Services.Workspaces
                     {
                         windowBindings[app.Id] = window.Handle;
                     }
+
+                    if (string.IsNullOrWhiteSpace(focusedApplicationId)
+                        && IsSnapshotFocusedWindow(window, focusedHandle, focusedWindowInfo))
+                    {
+                        focusedApplicationId = app.Id;
+                    }
                 }
             }
 
@@ -121,6 +136,9 @@ namespace TopToolbar.Services.Workspaces
                 CreationTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 IsShortcutNeeded = false,
                 MoveExistingWindows = true,
+                RuntimeSessionOnly = true,
+                RuntimeSessionId = WorkspaceRuntimeSession.SessionId,
+                FocusedApplicationId = focusedApplicationId,
                 Applications = applications,
             };
 
@@ -145,7 +163,46 @@ namespace TopToolbar.Services.Workspaces
 
             BindSnapshotWindows(workspace, windowBindings);
 
+            if (!string.IsNullOrWhiteSpace(focusedApplicationId))
+            {
+                AppLogger.LogInfo($"WorkspaceSnapshot: focused app captured id='{focusedApplicationId}' for workspace '{workspace.Id}'");
+            }
+
             return workspace;
+        }
+
+        private static bool IsSnapshotFocusedWindow(
+            WindowInfo candidate,
+            IntPtr focusedHandle,
+            WindowInfo focusedWindowInfo)
+        {
+            if (candidate == null)
+            {
+                return false;
+            }
+
+            if (focusedHandle != IntPtr.Zero && candidate.Handle == focusedHandle)
+            {
+                return true;
+            }
+
+            if (focusedWindowInfo == null || focusedWindowInfo.ProcessId == 0)
+            {
+                return false;
+            }
+
+            if (candidate.ProcessId != focusedWindowInfo.ProcessId)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(focusedWindowInfo.Title)
+                && string.Equals(candidate.Title, focusedWindowInfo.Title, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private void BindSnapshotWindows(
@@ -366,6 +423,20 @@ namespace TopToolbar.Services.Workspaces
                     Top = monitor.DpiUnawareRect.Top,
                     Width = monitor.DpiUnawareRect.Width,
                     Height = monitor.DpiUnawareRect.Height,
+                },
+                DpiAwareWorkRect = new MonitorDefinition.MonitorRect
+                {
+                    Left = monitor.DpiAwareWorkRect.Left,
+                    Top = monitor.DpiAwareWorkRect.Top,
+                    Width = monitor.DpiAwareWorkRect.Width,
+                    Height = monitor.DpiAwareWorkRect.Height,
+                },
+                DpiUnawareWorkRect = new MonitorDefinition.MonitorRect
+                {
+                    Left = monitor.DpiUnawareWorkRect.Left,
+                    Top = monitor.DpiUnawareWorkRect.Top,
+                    Width = monitor.DpiUnawareWorkRect.Width,
+                    Height = monitor.DpiUnawareWorkRect.Height,
                 },
             };
         }

@@ -48,6 +48,8 @@ namespace TopToolbar.Services.Workspaces
             ValidateWindows(template.Windows, errors);
             ValidateFocusPriority(template.FocusPriority, template.Windows, errors);
             ValidateLayout(template.Layout, template.Windows, errors);
+            ValidateAgent(template.Agent, errors);
+            ValidateCreation(template.Creation, errors);
 
             return errors;
         }
@@ -113,6 +115,20 @@ namespace TopToolbar.Services.Workspaces
                 window.MatchHints.Title = (window.MatchHints.Title ?? string.Empty).Trim();
                 window.MatchHints.AppUserModelId = (window.MatchHints.AppUserModelId ?? string.Empty).Trim();
             }
+
+            template.Agent ??= new TemplateAgentDefinition();
+            template.Agent.Name = string.IsNullOrWhiteSpace(template.Agent.Name)
+                ? "copilot"
+                : template.Agent.Name.Trim().ToLowerInvariant();
+            template.Agent.Command = (template.Agent.Command ?? string.Empty).Trim();
+            template.Agent.WorkingDirectory = string.IsNullOrWhiteSpace(template.Agent.WorkingDirectory)
+                ? "{repo}"
+                : template.Agent.WorkingDirectory.Trim();
+
+            template.Creation ??= new TemplateCreationDefinition();
+            template.Creation.WorktreeBaseBranch = string.IsNullOrWhiteSpace(template.Creation.WorktreeBaseBranch)
+                ? "main"
+                : template.Creation.WorktreeBaseBranch.Trim();
         }
 
         private static void ValidateWindows(IReadOnlyList<TemplateWindowDefinition> windows, List<string> errors)
@@ -249,6 +265,37 @@ namespace TopToolbar.Services.Workspaces
                 {
                     errors.Add($"layout.slots[{i.ToString(CultureInfo.InvariantCulture)}] exceeds normalized bounds.");
                 }
+            }
+        }
+
+        private static void ValidateAgent(TemplateAgentDefinition agent, List<string> errors)
+        {
+            if (agent == null || !agent.Enabled)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(agent.Name))
+            {
+                errors.Add("agent.name is required when agent.enabled is true.");
+            }
+
+            if (string.IsNullOrWhiteSpace(agent.Command))
+            {
+                errors.Add("agent.command is required when agent.enabled is true.");
+            }
+        }
+
+        private static void ValidateCreation(TemplateCreationDefinition creation, List<string> errors)
+        {
+            if (creation == null)
+            {
+                return;
+            }
+
+            if (creation.CreateWorktreeByDefault && string.IsNullOrWhiteSpace(creation.WorktreeBaseBranch))
+            {
+                errors.Add("creation.worktreeBaseBranch is required when createWorktreeByDefault is true.");
             }
         }
     }

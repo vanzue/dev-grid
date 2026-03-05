@@ -2,46 +2,42 @@
 
 ## Command Families
 
-- `ws templates` and `ws template ...` for template lifecycle.
-- `ws new ...` for workspace instance creation.
-- `ws switch ...` for lane activation.
+- `ws templates ...` for template lifecycle.
+- `ws new ...` for workspace instance creation from template/preset/inline apps.
+- `ws switch ...` for runtime switching.
+- `ws mcp` for MCP-based template authoring.
 
-## Primary Commands (v1)
+## Implemented Commands
 
-- `ws templates`
+- `ws templates [--json]`
 - `ws templates show <template>`
+- `ws templates delete <template> [--json]`
+- `ws templates validate <template> [--json]`
+- `ws templates update <template> --ops-file <path> [--json]`
+- `ws templates normalize [--dry-run] [--json] [--templates-dir <path>]`
 - `ws new --template <template> --name "<name>" [--repo <path>] [--focus <roles>] [--no-launch]`
 - `ws new --name "<name>" --repo <path> --preset <preset> [--focus <roles>] [--save-template <templateId>] [--no-launch]`
 - `ws new --name "<name>" --layout <layout> --app "<appSpec>" [--app "<appSpec>" ...] [--focus <roles>] [--save-template <templateId>] [--no-launch]`
-- `ws switch --id <workspaceId>`
-- `ws switch --template <template> --name "<instanceName>"`
-
-## Template Authoring Commands
-
-- `ws template capture --name <templateId>`
-- `ws template init --name <templateId>`
-- `ws template add-window --template <templateId> --role <role> --path <exe> [--args ...] [--cwd ...]`
-- `ws template set-layout --template <templateId> --preset <preset>`
-- `ws template set-focus --template <templateId> --roles <r1,r2,...>`
-- `ws template validate --name <templateId>`
-- `ws template delete --name <templateId>`
+- `ws switch --id <workspaceId> [--json] [--quiet]`
+- `ws switch --template <template> --name "<instanceName>" [--json] [--quiet]`
+- `ws mcp [--templates-dir <path>]`
 
 ## `ws new` Mode Matrix
 
 - Template mode: `--template` present.
-- Preset mode: `--preset` present, `--template` absent.
-- Inline mode: one or more `--app` present, `--template` absent.
+- Preset mode: `--preset` present and `--template` absent.
+- Inline mode: one or more `--app` present and `--template` absent.
 
-Required:
+### Required
 
-- `--name` is always required.
+- `--name` is required.
 - At least one of `--template`, `--preset`, or `--app`.
 
-Mutual constraints:
+### Constraints
 
-- `--template` may be combined with `--focus` and `--no-launch`.
-- `--preset` may be combined with `--app` (app entries augment preset windows).
-- If both `--preset` and `--layout` are provided, `--layout` overrides preset layout strategy.
+- `--template` cannot be combined with `--preset` or `--app`.
+- `--focus` can be combined with any mode.
+- `--no-launch` still persists workspace config.
 
 ## App Spec Contract (`--app`)
 
@@ -51,95 +47,69 @@ Mutual constraints:
 - Required keys: `role`, `exe`.
 - Optional keys: `cwd`, `args`, `init`, `monitor`.
 
-### Key rules
+### Rules
 
 - Keys are case-insensitive.
 - Whitespace around keys/values is trimmed.
 - Unknown keys fail validation.
 - Duplicate keys in one spec fail validation.
 
-### Escaping and quoting
+## Template Update Syntax
 
-- If a value contains `,` or `=`, wrap value in double quotes.
-- Inside quoted values, `\"` is treated as a literal quote.
-- Backslash escaping is supported only inside quoted values.
+`ws templates update` accepts an ops JSON file in either form:
 
-### Examples
+### Array form
 
-- `--app "role=terminal,exe=wt.exe,cwd={repo},init=pwsh -NoExit -Command .\\tools\\dev.ps1"`
-- `--app "role=editor,exe=code.exe,args={repo},cwd={repo}"`
-- `--app "role=review,exe=msedge.exe,args=\"https://github.com/microsoft/PowerToys/pulls\""`
+```json
+[
+  { "op": "set", "path": "description", "value": "My description" },
+  { "op": "set", "path": "layout.monitorPolicy", "value": "current" },
+  { "op": "set", "path": "windows[role=editor].exe", "value": "code.exe" }
+]
+```
 
-## Resolution Precedence
+### Document form
 
-For final runtime config, highest to lowest priority:
+```json
+{
+  "syntax": "workspace-template-update/v1",
+  "template": "pt-dev",
+  "ops": [
+    { "op": "set", "path": "agent.command", "value": "codex" },
+    { "op": "remove", "path": "windows[role=logs].init" }
+  ]
+}
+```
 
-1. Explicit CLI flags on current command.
-2. Inline `--app` entries.
-3. Preset defaults.
-4. Template defaults.
-
-Applied examples:
-
-- `--focus` overrides template/preset `focusPriority`.
-- `--layout` overrides preset/template layout strategy.
-- Per-app `cwd/args/init` from inline `--app` overrides preset-provided app defaults for same role.
+Supported ops: `set`, `replace`, `merge`, `upsert`, `remove`.
 
 ## Variable Substitution
 
-Supported tokens:
+Supported tokens in template launch fields:
 
 - `{repo}`
 - `{instanceName}`
 - `{workspaceTitle}`
 
-Applies to:
+## Exit Codes
 
-- executable path
-- args
-- working directory
-- startup/init command
-- monitor selector values when templated
+- `0` success
+- `2` validation error or bad arguments
+- `3` not found
+- `4` launch/switch failure
+- `5` switch diagnostic contains errors
 
-## Required Error Messages
+## Error Messages
 
 - `Workspace name is required.`
 - `Template '<name>' was not found.`
 - `Template '<name>' requires --repo.`
-- `Invalid --app spec '<value>': expected key=value pairs including role and exe.`
+- `Invalid --app spec '<value>': expected key=value pairs including role and exe. (<detail>)`
 - `Either --template, --preset, or --app must be provided.`
-- `Conflicting options: <detail>.`
-- `Workspace '<title>' already exists.`
+- `Conflicting options: --template cannot be combined with --preset or --app.`
 
-## Exit Codes
+## MCP Summary
 
-- `0` success
-- `2` validation error
-- `3` template not found
-- `4` launch/switch failure
-- `5` storage failure
-
-## Help Examples (must ship)
-
-- `ws new --template powertoys-coding --name "FZ crash fix" --repo D:\src\PowerToys`
-- `ws new --name "PR review #45773" --preset horizontal-equal --repo D:\src\PowerToys`
-- `ws new --name "CmdPal refactor" --layout main-left-70 --app "role=editor,exe=code.exe,args={repo},cwd={repo}" --app "role=terminal,exe=wt.exe,cwd={repo}" --focus editor,terminal`
-- `ws new --name "Release prep" --preset vertical-equal --repo D:\src\PowerToys --save-template powertoys-release`
-- `ws switch --template powertoys-coding --name "FZ crash fix"`
-
-## Parser Notes
-
-- Parse command line in two stages:
-  - Stage 1: verb/subcommand routing (`templates`, `template`, `new`, `switch`).
-  - Stage 2: option parsing with mode-specific validation.
-- Validation must complete before any persistence side effects.
-- `--no-launch` still writes workspace definition and button config.
-
-## Implementation Checklist
-
-- [ ] Add `ws` root command parser.
-- [ ] Implement `--app` parser with escaping/quote support.
-- [ ] Implement mode matrix and option conflict checks.
-- [ ] Implement precedence rules (`--focus` overrides preset/template defaults).
-- [ ] Implement `--save-template` flow from inline config.
-- [ ] Add command help text and examples.
+- Transport: stdio JSON-RPC with `Content-Length` framing.
+- Startup: `TopToolbar.exe ws mcp`.
+- Core tools: `template.list`, `template.get`, `template.save`, `template.validate`, `template.delete`, `template.update`, `template.normalize_all`, `app.discover_executables`, `template.suggest`.
