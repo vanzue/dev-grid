@@ -239,35 +239,8 @@ namespace TopToolbar.Services.Workspaces
             return true;
         }
 
-        private HashSet<uint> GetWorkspaceProcessIds(IReadOnlyCollection<EnsureAppResult> successfulApps)
-        {
-            var processIds = new HashSet<uint>();
-            if (successfulApps == null || successfulApps.Count == 0)
-            {
-                return processIds;
-            }
-
-            foreach (var result in successfulApps)
-            {
-                if (result.Handle == IntPtr.Zero)
-                {
-                    continue;
-                }
-
-                if (NativeWindowHelper.TryCreateWindowInfo(result.Handle, out var info)
-                    && info != null
-                    && info.ProcessId != 0)
-                {
-                    processIds.Add(info.ProcessId);
-                }
-            }
-
-            return processIds;
-        }
-
         private int MinimizeExtraneousWindows(
             HashSet<IntPtr> workspaceHandles,
-            HashSet<uint> workspaceProcessIds,
             CancellationToken cancellationToken)
         {
             var minimizedCount = 0;
@@ -294,11 +267,6 @@ namespace TopToolbar.Services.Workspaces
                     }
 
                     if (workspaceHandles != null && workspaceHandles.Contains(window.Handle))
-                    {
-                        continue;
-                    }
-
-                    if (workspaceProcessIds != null && workspaceProcessIds.Contains(window.ProcessId))
                     {
                         continue;
                     }

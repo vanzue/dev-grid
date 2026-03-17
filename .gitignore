@@ -18,6 +18,8 @@ Desktop.ini
 !.vscode/extensions.json
 !.vscode/*.code-snippets
 !.vscode/*.md
+.dotnet-home/
+.worktrees/
 
 # Build output
 **/bin/

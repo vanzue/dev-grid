@@ -146,7 +146,10 @@ namespace TopToolbar
             string title,
             string prompt,
             string placeholder,
-            string initialValue = "")
+            string initialValue = "",
+            string fieldLabel = "",
+            string confirmButtonText = "",
+            string subtitle = "")
         {
             var dispatcher = DispatcherQueue;
             AppLogger.LogInfo(
@@ -154,7 +157,14 @@ namespace TopToolbar
 
             if (DispatcherQueue == null || DispatcherQueue.HasThreadAccess)
             {
-                return ShowInputPromptCoreAsync(title, prompt, placeholder, initialValue);
+                return ShowInputPromptCoreAsync(
+                    title,
+                    prompt,
+                    placeholder,
+                    initialValue,
+                    fieldLabel,
+                    confirmButtonText,
+                    subtitle);
             }
 
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -162,7 +172,14 @@ namespace TopToolbar
             {
                 try
                 {
-                    var value = await ShowInputPromptCoreAsync(title, prompt, placeholder, initialValue)
+                    var value = await ShowInputPromptCoreAsync(
+                            title,
+                            prompt,
+                            placeholder,
+                            initialValue,
+                            fieldLabel,
+                            confirmButtonText,
+                            subtitle)
                         .ConfigureAwait(true);
                     tcs.TrySetResult(value);
                 }
@@ -202,7 +219,10 @@ namespace TopToolbar
             string title,
             string prompt,
             string placeholder,
-            string initialValue)
+            string initialValue,
+            string fieldLabel,
+            string confirmButtonText,
+            string subtitle)
         {
             _activePromptCount++;
             try
@@ -262,7 +282,7 @@ namespace TopToolbar
 
                 content.Children.Add(new TextBlock
                 {
-                    Text = "Workspace name",
+                    Text = string.IsNullOrWhiteSpace(fieldLabel) ? "Value" : fieldLabel.Trim(),
                     Foreground = CloneBrush(_toastLabel) ?? new SolidColorBrush(labelColor),
                     FontFamily = _textFontFamily,
                     FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
@@ -362,7 +382,9 @@ namespace TopToolbar
                 });
                 headingStack.Children.Add(new TextBlock
                 {
-                    Text = "Save current desktop as a runtime workspace.",
+                    Text = string.IsNullOrWhiteSpace(subtitle)
+                        ? "Provide a value to continue."
+                        : subtitle.Trim(),
                     Foreground = subtleTextBrush,
                     FontFamily = _textFontFamily,
                     FontSize = 12,
@@ -384,7 +406,7 @@ namespace TopToolbar
 
                 var okButton = new Button
                 {
-                    Content = "Save snapshot",
+                    Content = string.IsNullOrWhiteSpace(confirmButtonText) ? "Confirm" : confirmButtonText.Trim(),
                     MinWidth = 136,
                     IsEnabled = !string.IsNullOrWhiteSpace(valueBox.Text),
                     CornerRadius = new CornerRadius(10),
@@ -451,8 +473,9 @@ namespace TopToolbar
                         return;
                     }
 
-                    AppLogger.LogInfo($"ToastWindow.Prompt: OK clicked with value='{valueBox.Text.Trim()}'.");
-                    CompleteWithValue(valueBox.Text.Trim());
+                    var sanitizedValue = valueBox.Text.Trim();
+                    AppLogger.LogInfo($"ToastWindow.Prompt: OK clicked with non-empty value (length={sanitizedValue.Length}).");
+                    CompleteWithValue(sanitizedValue);
                 }
 
                 void CancelPrompt()

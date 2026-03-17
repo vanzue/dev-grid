@@ -12,6 +12,9 @@ namespace TopToolbar.Services.Workspaces
         [JsonPropertyName("schemaVersion")]
         public int SchemaVersion { get; set; } = 1;
 
+        [JsonPropertyName("kind")]
+        public string Kind { get; set; } = "workspace";
+
         [JsonPropertyName("name")]
         public string Name { get; set; } = string.Empty;
 
@@ -134,6 +137,15 @@ namespace TopToolbar.Services.Workspaces
 
         [JsonPropertyName("workingDirectory")]
         public string WorkingDirectory { get; set; } = "{repo}";
+
+        [JsonPropertyName("waitLiterals")]
+        public List<string> WaitLiterals { get; set; } = new();
+
+        [JsonPropertyName("waitRegex")]
+        public List<string> WaitRegex { get; set; } = new();
+
+        [JsonPropertyName("env")]
+        public Dictionary<string, string> Environment { get; set; } = new();
     }
 
     internal sealed class TemplateCreationDefinition

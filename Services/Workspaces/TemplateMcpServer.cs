@@ -349,6 +349,7 @@ namespace TopToolbar.Services.Workspaces
                 .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
                 .Select(item => new
                 {
+                    item.Kind,
                     item.Name,
                     item.DisplayName,
                     item.Description,
@@ -373,6 +374,9 @@ namespace TopToolbar.Services.Workspaces
                         item.Agent?.Name,
                         item.Agent?.Command,
                         item.Agent?.WorkingDirectory,
+                        item.Agent?.WaitLiterals,
+                        item.Agent?.WaitRegex,
+                        env = item.Agent?.Environment,
                     },
                     creation = new
                     {

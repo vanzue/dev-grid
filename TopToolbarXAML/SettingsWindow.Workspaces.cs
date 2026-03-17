@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Dispatching;
@@ -23,10 +24,21 @@ namespace TopToolbar
 {
     public sealed partial class SettingsWindow
     {
-        private sealed record TemplateChoice(string Name, string DisplayName, string Description, int WindowCount);
+        private sealed record TemplateChoice(
+            string Name,
+            string DisplayName,
+            string Description,
+            int WindowCount,
+            string Kind)
+        {
+            public string NameAndKind => $"{Name} · {(string.IsNullOrWhiteSpace(Kind) ? "workspace" : Kind)}";
+        }
+
         private sealed class TemplateEditorState
         {
             public string Name { get; set; } = string.Empty;
+
+            public string Kind { get; set; } = "workspace";
 
             public string DisplayName { get; set; } = string.Empty;
 
@@ -67,6 +79,7 @@ namespace TopToolbar
         private List<TemplateWindowDefinition> _templateCustomWindows = new();
         private bool _isTemplateEditorLoading;
         private bool _templateEditorEventsBound;
+        private bool _isTemplateListSelectionSync;
 
         private async void OnRemoveWorkspace(object sender, RoutedEventArgs e)
         {
@@ -294,12 +307,18 @@ namespace TopToolbar
             {
                 using var orchestrator = new WorkspaceTemplateOrchestrator();
                 var templates = (await orchestrator.ListTemplatesAsync(CancellationToken.None).ConfigureAwait(true))
-                    .Where(template => template != null)
+                    .Where(template =>
+                        template != null
+                        && !string.Equals(
+                            TemplateDefinitionValidator.NormalizeKind(template.Kind),
+                            "agent",
+                            StringComparison.OrdinalIgnoreCase))
                     .Select(template => new TemplateChoice(
                         template.Name,
                         string.IsNullOrWhiteSpace(template.DisplayName) ? template.Name : template.DisplayName,
                         template.Description ?? string.Empty,
-                        template.Windows?.Count ?? 0))
+                        template.Windows?.Count ?? 0,
+                        TemplateDefinitionValidator.NormalizeKind(template.Kind)))
                     .OrderBy(template => template.DisplayName, StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
@@ -400,6 +419,20 @@ namespace TopToolbar
                 PlaceholderText = "Description (optional)",
                 MinWidth = 360,
             };
+            var templateKindComboBox = new ComboBox
+            {
+                MinWidth = 360,
+                SelectedIndex = 0,
+            };
+            templateKindComboBox.Items.Add(new ComboBoxItem { Content = "workspace" });
+            templateKindComboBox.Items.Add(new ComboBoxItem { Content = "agent" });
+            var agentCommandBox = new TextBox
+            {
+                PlaceholderText = "Agent command (for example: copilot)",
+                MinWidth = 360,
+                Text = "copilot",
+                Visibility = Visibility.Collapsed,
+            };
             var hintBlock = new TextBlock
             {
                 Opacity = 0.75,
@@ -415,6 +448,16 @@ namespace TopToolbar
             content.Children.Add(templateNameBox);
             content.Children.Add(displayNameBox);
             content.Children.Add(descriptionBox);
+            content.Children.Add(new TextBlock { Text = "Template type" });
+            content.Children.Add(templateKindComboBox);
+            content.Children.Add(new TextBlock
+            {
+                Text = "Agent command",
+                Opacity = 0.72,
+                Visibility = Visibility.Collapsed,
+            });
+            var agentCommandLabel = content.Children[^1] as TextBlock;
+            content.Children.Add(agentCommandBox);
             content.Children.Add(hintBlock);
 
             var dialog = new ContentDialog
@@ -432,15 +475,30 @@ namespace TopToolbar
             {
                 var normalizedName = WorkspaceStoragePaths.NormalizeTemplateName(templateNameBox.Text);
                 var isValidName = IsValidTemplateName(normalizedName);
+                var kind = GetComboBoxSelection(templateKindComboBox, "workspace");
+                var isAgent = string.Equals(
+                    TemplateDefinitionValidator.NormalizeKind(kind),
+                    "agent",
+                    StringComparison.OrdinalIgnoreCase);
+
+                if (agentCommandLabel != null)
+                {
+                    agentCommandLabel.Visibility = isAgent ? Visibility.Visible : Visibility.Collapsed;
+                }
+
+                agentCommandBox.Visibility = isAgent ? Visibility.Visible : Visibility.Collapsed;
+                var hasAgentCommand = !isAgent || !string.IsNullOrWhiteSpace(agentCommandBox.Text);
 
                 hintBlock.Text = isValidName
                     ? $"Template id: {normalizedName}"
                     : "Template id must match: a-z, 0-9, hyphen, length 3-64.";
 
-                dialog.IsPrimaryButtonEnabled = isValidName;
+                dialog.IsPrimaryButtonEnabled = isValidName && hasAgentCommand;
             }
 
             templateNameBox.TextChanged += (_, __) => UpdateState();
+            templateKindComboBox.SelectionChanged += (_, __) => UpdateState();
+            agentCommandBox.TextChanged += (_, __) => UpdateState();
             UpdateState();
 
             var result = await dialog.ShowAsync();
@@ -460,6 +518,18 @@ namespace TopToolbar
                 ? BuildDisplayNameFromTemplateName(normalizedTemplateName)
                 : displayNameBox.Text.Trim();
             var description = descriptionBox.Text?.Trim() ?? string.Empty;
+            var templateKind = GetComboBoxSelection(templateKindComboBox, "workspace");
+            var normalizedKind = TemplateDefinitionValidator.NormalizeKind(templateKind);
+            var agentCommand = (agentCommandBox.Text ?? string.Empty).Trim();
+            if (string.Equals(normalizedKind, "agent", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(agentCommand))
+            {
+                await ShowSimpleMessageOnUiThreadAsync(
+                    xamlRoot,
+                    "Missing agent command",
+                    "Agent templates require an agent command.");
+                return;
+            }
 
             try
             {
@@ -475,7 +545,9 @@ namespace TopToolbar
                     normalizedTemplateName,
                     displayName,
                     description,
-                    requiresRepo: true);
+                    requiresRepo: true,
+                    kind: normalizedKind,
+                    agentCommand: agentCommand);
 
                 await orchestrator.SaveTemplateAsync(template, CancellationToken.None).ConfigureAwait(true);
                 await RefreshTemplateListForPageAsync().ConfigureAwait(true);
@@ -748,22 +820,31 @@ namespace TopToolbar
             string templateName,
             string displayName,
             string description,
-            bool requiresRepo)
+            bool requiresRepo,
+            string kind = "workspace",
+            string agentCommand = "")
         {
+            var normalizedKind = TemplateDefinitionValidator.NormalizeKind(kind);
+            var isAgentTemplate = string.Equals(normalizedKind, "agent", StringComparison.OrdinalIgnoreCase);
+            var normalizedAgentCommand = string.IsNullOrWhiteSpace(agentCommand)
+                ? "copilot"
+                : agentCommand.Trim();
+
             var state = new TemplateEditorState
             {
                 Name = templateName,
+                Kind = normalizedKind,
                 DisplayName = string.IsNullOrWhiteSpace(displayName) ? templateName : displayName,
                 Description = description ?? string.Empty,
                 RequiresRepo = requiresRepo,
                 DefaultRepoRoot = string.Empty,
                 LayoutStrategy = "side-by-side",
                 MonitorPolicy = "primary",
-                EnableAgent = true,
+                EnableAgent = isAgentTemplate,
                 AgentName = "copilot",
-                AgentCommand = "copilot",
+                AgentCommand = isAgentTemplate ? normalizedAgentCommand : string.Empty,
                 IncludeTerminal = true,
-                IncludeVsCode = true,
+                IncludeVsCode = !isAgentTemplate,
                 IncludeVisualStudio = false,
                 IncludeLogsFolder = false,
                 LogsPath = "{repo}",
@@ -788,7 +869,11 @@ namespace TopToolbar
                 return;
             }
 
-            if (_disposed || _isClosed || Content is not FrameworkElement root || TemplatesList == null)
+            if (_disposed
+                || _isClosed
+                || Content is not FrameworkElement root
+                || WorkspaceTemplatesList == null
+                || AgentTemplatesList == null)
             {
                 return;
             }
@@ -806,18 +891,60 @@ namespace TopToolbar
                         template.Name,
                         string.IsNullOrWhiteSpace(template.DisplayName) ? template.Name : template.DisplayName,
                         template.Description ?? string.Empty,
-                        template.Windows?.Count ?? 0))
+                        template.Windows?.Count ?? 0,
+                        TemplateDefinitionValidator.NormalizeKind(template.Kind)))
                     .OrderBy(template => template.DisplayName, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                var workspaceChoices = choices
+                    .Where(choice => !string.Equals(choice.Kind, "agent", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                var agentChoices = choices
+                    .Where(choice => string.Equals(choice.Kind, "agent", StringComparison.OrdinalIgnoreCase))
                     .ToList();
 
                 await RunOnUiThreadAsync(() =>
                 {
-                    var previousSelection = TemplatesList.SelectedItem as TemplateChoice;
-                    TemplatesList.ItemsSource = choices;
-                    TemplatesList.SelectedItem = choices.FirstOrDefault(choice =>
+                    var previousSelection = GetSelectedTemplateChoice();
+
+                    _isTemplateListSelectionSync = true;
+                    WorkspaceTemplatesList.ItemsSource = workspaceChoices;
+                    AgentTemplatesList.ItemsSource = agentChoices;
+
+                    var workspaceSelection = workspaceChoices.FirstOrDefault(choice =>
                         previousSelection != null &&
                         string.Equals(choice.Name, previousSelection.Name, StringComparison.OrdinalIgnoreCase))
-                        ?? choices.FirstOrDefault();
+                        ?? workspaceChoices.FirstOrDefault();
+                    var agentSelection = agentChoices.FirstOrDefault(choice =>
+                        previousSelection != null &&
+                        string.Equals(choice.Name, previousSelection.Name, StringComparison.OrdinalIgnoreCase));
+
+                    if (workspaceSelection != null)
+                    {
+                        WorkspaceTemplatesList.SelectedItem = workspaceSelection;
+                        AgentTemplatesList.SelectedItem = null;
+                    }
+                    else if (agentSelection != null)
+                    {
+                        WorkspaceTemplatesList.SelectedItem = null;
+                        AgentTemplatesList.SelectedItem = agentSelection;
+                    }
+                    else if (workspaceChoices.Count > 0)
+                    {
+                        WorkspaceTemplatesList.SelectedIndex = 0;
+                        AgentTemplatesList.SelectedItem = null;
+                    }
+                    else if (agentChoices.Count > 0)
+                    {
+                        WorkspaceTemplatesList.SelectedItem = null;
+                        AgentTemplatesList.SelectedIndex = 0;
+                    }
+                    else
+                    {
+                        WorkspaceTemplatesList.SelectedItem = null;
+                        AgentTemplatesList.SelectedItem = null;
+                    }
+
+                    _isTemplateListSelectionSync = false;
                     UpdateTemplatePageSelectionState();
                     return Task.CompletedTask;
                 }, dispatcher).ConfigureAwait(true);
@@ -833,7 +960,8 @@ namespace TopToolbar
 
         private TemplateChoice GetSelectedTemplateChoice()
         {
-            return TemplatesList?.SelectedItem as TemplateChoice;
+            return WorkspaceTemplatesList?.SelectedItem as TemplateChoice
+                ?? AgentTemplatesList?.SelectedItem as TemplateChoice;
         }
 
         private void UpdateTemplatePageSelectionState()
@@ -851,7 +979,8 @@ namespace TopToolbar
 
             if (TemplatesEmptyText != null)
             {
-                var hasItems = TemplatesList?.Items?.Count > 0;
+                var hasItems = (WorkspaceTemplatesList?.Items?.Count ?? 0) > 0
+                    || (AgentTemplatesList?.Items?.Count ?? 0) > 0;
                 TemplatesEmptyText.Visibility = hasItems ? Visibility.Collapsed : Visibility.Visible;
             }
 
@@ -861,16 +990,61 @@ namespace TopToolbar
             }
         }
 
-        private async void OnTemplatesListSelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void OnWorkspaceTemplatesListSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_isTemplateListSelectionSync)
+            {
+                return;
+            }
+
             try
             {
+                _isTemplateListSelectionSync = true;
+                if (WorkspaceTemplatesList?.SelectedItem != null && AgentTemplatesList != null)
+                {
+                    AgentTemplatesList.SelectedItem = null;
+                }
+
+                _isTemplateListSelectionSync = false;
                 UpdateTemplatePageSelectionState();
                 await LoadSelectedTemplateIntoEditorAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
             {
                 AppLogger.LogError("SettingsWindow: template selection changed handler failed.", ex);
+            }
+            finally
+            {
+                _isTemplateListSelectionSync = false;
+            }
+        }
+
+        private async void OnAgentTemplatesListSelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isTemplateListSelectionSync)
+            {
+                return;
+            }
+
+            try
+            {
+                _isTemplateListSelectionSync = true;
+                if (AgentTemplatesList?.SelectedItem != null && WorkspaceTemplatesList != null)
+                {
+                    WorkspaceTemplatesList.SelectedItem = null;
+                }
+
+                _isTemplateListSelectionSync = false;
+                UpdateTemplatePageSelectionState();
+                await LoadSelectedTemplateIntoEditorAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogError("SettingsWindow: template selection changed handler failed.", ex);
+            }
+            finally
+            {
+                _isTemplateListSelectionSync = false;
             }
         }
 
@@ -888,19 +1062,33 @@ namespace TopToolbar
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(templateName) || TemplatesList == null)
+            if (string.IsNullOrWhiteSpace(templateName) || WorkspaceTemplatesList == null || AgentTemplatesList == null)
             {
                 return;
             }
 
-            var choice = (TemplatesList.ItemsSource as IEnumerable<TemplateChoice>)
+            var workspaceChoice = (WorkspaceTemplatesList.ItemsSource as IEnumerable<TemplateChoice>)
                 ?.FirstOrDefault(item => string.Equals(item.Name, templateName, StringComparison.OrdinalIgnoreCase));
-            if (choice == null)
+            var agentChoice = (AgentTemplatesList.ItemsSource as IEnumerable<TemplateChoice>)
+                ?.FirstOrDefault(item => string.Equals(item.Name, templateName, StringComparison.OrdinalIgnoreCase));
+            if (workspaceChoice == null && agentChoice == null)
             {
                 return;
             }
 
-            TemplatesList.SelectedItem = choice;
+            _isTemplateListSelectionSync = true;
+            if (workspaceChoice != null)
+            {
+                WorkspaceTemplatesList.SelectedItem = workspaceChoice;
+                AgentTemplatesList.SelectedItem = null;
+            }
+            else
+            {
+                WorkspaceTemplatesList.SelectedItem = null;
+                AgentTemplatesList.SelectedItem = agentChoice;
+            }
+
+            _isTemplateListSelectionSync = false;
             await LoadSelectedTemplateIntoEditorAsync().ConfigureAwait(true);
         }
 
@@ -935,6 +1123,7 @@ namespace TopToolbar
                     Name = string.Empty,
                     DisplayName = string.Empty,
                     Description = string.Empty,
+                    Kind = "workspace",
                     LayoutStrategy = "side-by-side",
                     MonitorPolicy = "primary",
                     RequiresRepo = true,
@@ -956,22 +1145,33 @@ namespace TopToolbar
                     return;
                 }
 
-                _selectedTemplateDefinition = template;
                 var state = BuildTemplateEditorStateFromTemplate(template, out var customWindows);
-                _templateCustomWindows = customWindows;
-                ApplyTemplateEditorStateToUi(state);
-                if (TemplateEditorHintText != null)
+                await RunOnUiThreadAsync(() =>
                 {
-                    TemplateEditorHintText.Text = $"Editing template '{template.Name}'.";
-                }
+                    _selectedTemplateDefinition = template;
+                    _templateCustomWindows = customWindows;
+                    ApplyTemplateEditorStateToUi(state);
+                    if (TemplateEditorHintText != null)
+                    {
+                        TemplateEditorHintText.Text = $"Editing template '{template.Name}'.";
+                    }
 
-                if (TemplateEditorStatusText != null)
-                {
-                    TemplateEditorStatusText.Text = string.Empty;
-                }
+                    if (TemplateEditorStatusText != null)
+                    {
+                        TemplateEditorStatusText.Text = string.Empty;
+                    }
+
+                    return Task.CompletedTask;
+                }, queue).ConfigureAwait(true);
             }
             catch (Exception ex)
             {
+                if (IsTransientUiComException(ex))
+                {
+                    AppLogger.LogWarning("SettingsWindow: transient COM exception while loading template editor UI; suppressing error banner.");
+                    return;
+                }
+
                 AppLogger.LogError("SettingsWindow: load template into editor failed.", ex);
                 await RunOnUiThreadAsync(() =>
                 {
@@ -983,6 +1183,19 @@ namespace TopToolbar
                     return Task.CompletedTask;
                 }, queue).ConfigureAwait(true);
             }
+        }
+
+        private static bool IsTransientUiComException(Exception ex)
+        {
+            for (var cursor = ex; cursor != null; cursor = cursor.InnerException)
+            {
+                if (cursor is COMException comException && unchecked((uint)comException.HResult) == 0x8001010E)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void ApplyTemplateEditorStateToUi(TemplateEditorState state)
@@ -1021,6 +1234,8 @@ namespace TopToolbar
                 {
                     TemplateDescriptionTextBox.Text = state.Description;
                 }
+
+                SelectComboItemByContent(TemplateKindComboBox, state.Kind);
 
                 var effectiveLayoutStrategy = GetLayoutStrategyByWindowCount(GetConfiguredWindowCount(state));
                 SelectComboItemByContent(TemplateLayoutStrategyComboBox, effectiveLayoutStrategy);
@@ -1116,8 +1331,22 @@ namespace TopToolbar
             TemplateIncludeVsCodeToggle.Toggled += OnTemplateEditorToggleChanged;
             TemplateIncludeVisualStudioToggle.Toggled += OnTemplateEditorToggleChanged;
             TemplateIncludeLogsToggle.Toggled += OnTemplateEditorToggleChanged;
+            if (TemplateKindComboBox != null)
+            {
+                TemplateKindComboBox.SelectionChanged += OnTemplateEditorSelectionChanged;
+            }
 
             _templateEditorEventsBound = true;
+        }
+
+        private void OnTemplateEditorSelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdateTemplateLayoutPreviewFromUi();
+        }
+
+        private void OnTemplateKindSelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdateTemplateLayoutPreviewFromUi();
         }
 
         private void OnTemplateEditorToggleChanged(object sender, RoutedEventArgs e)
@@ -1150,17 +1379,57 @@ namespace TopToolbar
                 return;
             }
 
+            var isAgentTemplate = string.Equals(
+                TemplateDefinitionValidator.NormalizeKind(state.Kind),
+                "agent",
+                StringComparison.OrdinalIgnoreCase);
+
             _isTemplateEditorLoading = true;
             try
             {
+                if (TemplateAgentSection != null)
+                {
+                    TemplateAgentSection.Visibility = isAgentTemplate ? Visibility.Visible : Visibility.Collapsed;
+                }
+
+                if (TemplateAgentSectionDivider != null)
+                {
+                    TemplateAgentSectionDivider.Visibility = isAgentTemplate ? Visibility.Visible : Visibility.Collapsed;
+                }
+
+                if (TemplateWorkspaceLayoutSection != null)
+                {
+                    TemplateWorkspaceLayoutSection.Visibility = isAgentTemplate ? Visibility.Collapsed : Visibility.Visible;
+                }
+
+                if (TemplateWorkspaceApplicationsSection != null)
+                {
+                    TemplateWorkspaceApplicationsSection.Visibility = isAgentTemplate ? Visibility.Collapsed : Visibility.Visible;
+                }
+
+                if (TemplateWorkspaceAppsDivider != null)
+                {
+                    TemplateWorkspaceAppsDivider.Visibility = isAgentTemplate ? Visibility.Collapsed : Visibility.Visible;
+                }
+
                 if (TemplateIncludeTerminalToggle != null)
                 {
-                    if (state.EnableAgent && !TemplateIncludeTerminalToggle.IsOn)
+                    if ((state.EnableAgent || isAgentTemplate) && !TemplateIncludeTerminalToggle.IsOn)
                     {
                         TemplateIncludeTerminalToggle.IsOn = true;
                     }
 
-                    TemplateIncludeTerminalToggle.IsEnabled = !state.EnableAgent;
+                    TemplateIncludeTerminalToggle.IsEnabled = !(state.EnableAgent || isAgentTemplate);
+                }
+
+                if (TemplateEnableAgentToggle != null)
+                {
+                    if (isAgentTemplate && !TemplateEnableAgentToggle.IsOn)
+                    {
+                        TemplateEnableAgentToggle.IsOn = true;
+                    }
+
+                    TemplateEnableAgentToggle.IsEnabled = !isAgentTemplate;
                 }
 
                 var effectiveState = BuildTemplateEditorStateFromUi();
@@ -1169,7 +1438,7 @@ namespace TopToolbar
                     return;
                 }
 
-                var count = GetConfiguredWindowCount(effectiveState);
+                var count = isAgentTemplate ? 1 : GetConfiguredWindowCount(effectiveState);
                 var strategy = GetLayoutStrategyByWindowCount(count);
                 SelectComboItemByContent(TemplateLayoutStrategyComboBox, strategy);
             }
@@ -1186,27 +1455,39 @@ namespace TopToolbar
                 return null;
             }
 
+            var kind = GetComboBoxSelection(TemplateKindComboBox, "workspace");
+            var normalizedKind = TemplateDefinitionValidator.NormalizeKind(kind);
+            var isAgentTemplate = string.Equals(normalizedKind, "agent", StringComparison.OrdinalIgnoreCase);
+            var enableAgent = isAgentTemplate || (TemplateEnableAgentToggle?.IsOn ?? false);
+            var includeTerminal = isAgentTemplate
+                || (TemplateIncludeTerminalToggle?.IsOn ?? false)
+                || enableAgent;
+            var includeVsCode = isAgentTemplate ? false : (TemplateIncludeVsCodeToggle?.IsOn ?? false);
+            var includeVisualStudio = isAgentTemplate ? false : (TemplateIncludeVisualStudioToggle?.IsOn ?? false);
+            var includeLogs = isAgentTemplate ? false : (TemplateIncludeLogsToggle?.IsOn ?? false);
+
             return new TemplateEditorState
             {
                 Name = _selectedTemplateDefinition.Name,
+                Kind = normalizedKind,
                 DisplayName = (TemplateDisplayNameTextBox?.Text ?? string.Empty).Trim(),
                 Description = (TemplateDescriptionTextBox?.Text ?? string.Empty).Trim(),
                 LayoutStrategy = GetComboBoxSelection(TemplateLayoutStrategyComboBox, "side-by-side"),
                 MonitorPolicy = GetComboBoxSelection(TemplateMonitorPolicyComboBox, "primary"),
                 RequiresRepo = TemplateRequiresRepoToggle?.IsOn ?? false,
                 DefaultRepoRoot = (TemplateDefaultRepoTextBox?.Text ?? string.Empty).Trim(),
-                CreateWorktreeByDefault = TemplateCreateWorktreeToggle?.IsOn ?? false,
+                CreateWorktreeByDefault = isAgentTemplate ? false : (TemplateCreateWorktreeToggle?.IsOn ?? false),
                 WorktreeBaseBranch = string.IsNullOrWhiteSpace(TemplateWorktreeBaseBranchTextBox?.Text)
                     ? "main"
                     : TemplateWorktreeBaseBranchTextBox.Text.Trim(),
-                EnableAgent = TemplateEnableAgentToggle?.IsOn ?? false,
+                EnableAgent = enableAgent,
                 AgentName = GetComboBoxSelection(TemplateAgentComboBox, "copilot"),
                 AgentCommand = (TemplateAgentCommandTextBox?.Text ?? string.Empty).Trim(),
-                IncludeTerminal = (TemplateIncludeTerminalToggle?.IsOn ?? false) || (TemplateEnableAgentToggle?.IsOn ?? false),
-                IncludeVsCode = TemplateIncludeVsCodeToggle?.IsOn ?? false,
-                IncludeVisualStudio = TemplateIncludeVisualStudioToggle?.IsOn ?? false,
+                IncludeTerminal = includeTerminal,
+                IncludeVsCode = includeVsCode,
+                IncludeVisualStudio = includeVisualStudio,
                 VisualStudioSolutionPath = (TemplateVisualStudioSolutionTextBox?.Text ?? string.Empty).Trim(),
-                IncludeLogsFolder = TemplateIncludeLogsToggle?.IsOn ?? false,
+                IncludeLogsFolder = includeLogs,
                 LogsPath = (TemplateLogsPathTextBox?.Text ?? string.Empty).Trim(),
             };
         }
@@ -1219,6 +1500,7 @@ namespace TopToolbar
             var state = new TemplateEditorState
             {
                 Name = template?.Name ?? string.Empty,
+                Kind = TemplateDefinitionValidator.NormalizeKind(template?.Kind),
                 DisplayName = string.IsNullOrWhiteSpace(template?.DisplayName) ? template?.Name ?? string.Empty : template.DisplayName,
                 Description = template?.Description ?? string.Empty,
                 LayoutStrategy = string.IsNullOrWhiteSpace(template?.Layout?.Strategy) ? "side-by-side" : template.Layout.Strategy,
@@ -1328,12 +1610,39 @@ namespace TopToolbar
         {
             _ = customWindows;
             var windows = new List<TemplateWindowDefinition>();
+            var normalizedKind = TemplateDefinitionValidator.NormalizeKind(state.Kind);
+            var isAgentTemplate = string.Equals(normalizedKind, "agent", StringComparison.OrdinalIgnoreCase);
+            if (isAgentTemplate)
+            {
+                state.EnableAgent = true;
+                state.IncludeTerminal = true;
+                state.IncludeVsCode = false;
+                state.IncludeVisualStudio = false;
+                state.IncludeLogsFolder = false;
+            }
+
             var includeTerminal = state.IncludeTerminal || state.EnableAgent;
             var agentCommand = NormalizeAgentCommand(
                 string.IsNullOrWhiteSpace(state.AgentCommand) ? state.AgentName : state.AgentCommand,
                 state.AgentName);
 
-            if (state.IncludeVsCode)
+            if (isAgentTemplate)
+            {
+                windows.Add(new TemplateWindowDefinition
+                {
+                    Role = "terminal",
+                    Exe = "wt.exe",
+                    WorkingDirectory = "{repo}",
+                    Args = $"pwsh -NoExit -Command {Quote(agentCommand)}",
+                    Monitor = "primary",
+                    MatchHints = new TemplateMatchHints
+                    {
+                        ProcessName = "wt",
+                    },
+                });
+            }
+
+            if (!isAgentTemplate && state.IncludeVsCode)
             {
                 windows.Add(new TemplateWindowDefinition
                 {
@@ -1349,7 +1658,7 @@ namespace TopToolbar
                 });
             }
 
-            if (state.IncludeVisualStudio)
+            if (!isAgentTemplate && state.IncludeVisualStudio)
             {
                 var solutionArg = string.IsNullOrWhiteSpace(state.VisualStudioSolutionPath)
                     ? "{repo}"
@@ -1370,7 +1679,7 @@ namespace TopToolbar
                 });
             }
 
-            if (includeTerminal)
+            if (!isAgentTemplate && includeTerminal)
             {
                 windows.Add(new TemplateWindowDefinition
                 {
@@ -1386,7 +1695,7 @@ namespace TopToolbar
                 });
             }
 
-            if (state.IncludeLogsFolder)
+            if (!isAgentTemplate && state.IncludeLogsFolder)
             {
                 var logsPath = string.IsNullOrWhiteSpace(state.LogsPath) ? "{repo}" : state.LogsPath;
                 windows.Add(new TemplateWindowDefinition
@@ -1402,7 +1711,7 @@ namespace TopToolbar
                 });
             }
 
-            if (windows.Count == 0)
+            if (!isAgentTemplate && windows.Count == 0)
             {
                 windows.Add(new TemplateWindowDefinition
                 {
@@ -1435,11 +1744,12 @@ namespace TopToolbar
                 }
             }
 
-            var strategy = GetLayoutStrategyByWindowCount(allRoles.Count);
+            var strategy = isAgentTemplate ? "single" : GetLayoutStrategyByWindowCount(allRoles.Count);
             var monitorPolicy = string.IsNullOrWhiteSpace(state.MonitorPolicy) ? "primary" : state.MonitorPolicy.Trim();
 
             var requiresRepo = state.RequiresRepo
                 || state.CreateWorktreeByDefault
+                || (isAgentTemplate && ContainsRepoToken(agentCommand))
                 || windows.Any(window =>
                     ContainsRepoToken(window?.Exe)
                     || ContainsRepoToken(window?.WorkingDirectory)
@@ -1449,6 +1759,7 @@ namespace TopToolbar
             return new TemplateDefinition
             {
                 SchemaVersion = 1,
+                Kind = normalizedKind,
                 Name = state.Name,
                 DisplayName = string.IsNullOrWhiteSpace(state.DisplayName) ? state.Name : state.DisplayName,
                 Description = state.Description ?? string.Empty,

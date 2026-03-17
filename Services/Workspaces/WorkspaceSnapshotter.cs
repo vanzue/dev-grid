@@ -41,6 +41,12 @@ namespace TopToolbar.Services.Workspaces
         {
             "Program Manager",
         };
+        private static readonly HashSet<string> ExcludedProcessFileNames = new(
+            StringComparer.OrdinalIgnoreCase
+        )
+        {
+            "msedgewebview2.exe",
+        };
 
         private readonly WorkspaceDefinitionStore _definitionStore;
         private readonly DisplayManager _displayManager;
@@ -385,6 +391,15 @@ namespace TopToolbar.Services.Workspaces
                 !string.IsNullOrWhiteSpace(window.Title)
                 && ExcludedWindowTitles.Contains(window.Title)
             )
+            {
+                return true;
+            }
+
+            var processFileName = !string.IsNullOrWhiteSpace(window.ProcessFileName)
+                ? window.ProcessFileName
+                : Path.GetFileName(window.ProcessPath);
+            if (!string.IsNullOrWhiteSpace(processFileName)
+                && ExcludedProcessFileNames.Contains(processFileName))
             {
                 return true;
             }

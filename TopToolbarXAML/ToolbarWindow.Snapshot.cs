@@ -155,7 +155,10 @@ namespace TopToolbar
                         "Snapshot workspace",
                         "Enter a name for this workspace snapshot.",
                         "Workspace name",
-                        defaultSnapshotName)
+                        defaultSnapshotName,
+                        fieldLabel: "Workspace name",
+                        confirmButtonText: "Save snapshot",
+                        subtitle: "Save current desktop as a runtime workspace.")
                     .ConfigureAwait(true);
                 if (string.IsNullOrWhiteSpace(snapshotName))
                 {
@@ -217,7 +220,13 @@ namespace TopToolbar
                     using var orchestrator = new WorkspaceTemplateOrchestrator();
                     var list = await orchestrator.ListTemplatesAsync(CancellationToken.None).ConfigureAwait(false);
                     templates = list
-                        .Where(t => t != null && !string.IsNullOrWhiteSpace(t.Name))
+                        .Where(t =>
+                            t != null
+                            && !string.IsNullOrWhiteSpace(t.Name)
+                            && !string.Equals(
+                                TemplateDefinitionValidator.NormalizeKind(t.Kind),
+                                "agent",
+                                StringComparison.OrdinalIgnoreCase))
                         .Select(t => new QuickTemplateOption
                         {
                             Name = t.Name,

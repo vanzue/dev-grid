@@ -127,6 +127,23 @@ namespace TopToolbar.Services.Windowing
             return windows;
         }
 
+        public static IReadOnlyList<IntPtr> EnumerateTopLevelWindows()
+        {
+            var windows = new List<IntPtr>();
+            _ = EnumWindows(
+                (hwnd, _) =>
+                {
+                    if (IsTopLevelWindow(hwnd))
+                    {
+                        windows.Add(hwnd);
+                    }
+
+                    return true;
+                },
+                IntPtr.Zero);
+            return windows;
+        }
+
         public static bool TryCreateWindowInfo(IntPtr hwnd, out WindowInfo info)
         {
             info = null;

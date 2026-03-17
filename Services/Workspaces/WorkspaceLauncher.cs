@@ -226,7 +226,7 @@ namespace TopToolbar.Services.Workspaces
                     ReportProgress("Phase 1/4: Minimizing existing windows...");
                     var swPhase0 = Stopwatch.StartNew();
                     LogPerf("WorkspaceRuntime: Phase 0 - Minimize existing windows before launching fresh workspace windows");
-                    preMinimizedCount = MinimizeExtraneousWindows(new HashSet<IntPtr>(), null, launchCancellationToken);
+                    preMinimizedCount = MinimizeExtraneousWindows(new HashSet<IntPtr>(), launchCancellationToken);
                     swPhase0.Stop();
                     result.StageDurationsMs["preMinimize"] = swPhase0.ElapsedMilliseconds;
                     LogPerf($"WorkspaceRuntime: Phase 0 done in {swPhase0.ElapsedMilliseconds} ms - minimized {preMinimizedCount} window(s)");
@@ -379,8 +379,7 @@ namespace TopToolbar.Services.Workspaces
                     else
                     {
                         var workspaceHandles = new HashSet<IntPtr>(successfulApps.Select(r => r.Handle));
-                        var workspaceProcessIds = GetWorkspaceProcessIds(successfulApps);
-                        result.MinimizedCount = MinimizeExtraneousWindows(workspaceHandles, workspaceProcessIds, launchCancellationToken);
+                        result.MinimizedCount = MinimizeExtraneousWindows(workspaceHandles, launchCancellationToken);
                         LogPerf($"WorkspaceRuntime: Phase 3 - MinimizeExtraneousWindows minimized {result.MinimizedCount} window(s)");
                     }
                 }

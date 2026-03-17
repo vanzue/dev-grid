@@ -31,6 +31,11 @@ namespace TopToolbar.Services.Workspaces
                 errors.Add($"schemaVersion '{template.SchemaVersion.ToString(CultureInfo.InvariantCulture)}' is not supported.");
             }
 
+            if (!IsValidKind(template.Kind))
+            {
+                errors.Add("kind must be 'workspace' or 'agent'.");
+            }
+
             if (string.IsNullOrWhiteSpace(template.Name) || !NamePattern.IsMatch(template.Name))
             {
                 errors.Add("name must match [a-z0-9-]{3,64}.");
@@ -62,6 +67,7 @@ namespace TopToolbar.Services.Workspaces
             }
 
             template.Name = (template.Name ?? string.Empty).Trim().ToLowerInvariant();
+            template.Kind = NormalizeKind(template.Kind);
             template.DisplayName = (template.DisplayName ?? string.Empty).Trim();
             template.Description = (template.Description ?? string.Empty).Trim();
             template.DefaultRepoRoot = (template.DefaultRepoRoot ?? string.Empty).Trim();
@@ -124,6 +130,32 @@ namespace TopToolbar.Services.Workspaces
             template.Agent.WorkingDirectory = string.IsNullOrWhiteSpace(template.Agent.WorkingDirectory)
                 ? "{repo}"
                 : template.Agent.WorkingDirectory.Trim();
+            template.Agent.WaitLiterals ??= new List<string>();
+            template.Agent.WaitRegex ??= new List<string>();
+            template.Agent.Environment ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            for (var i = template.Agent.WaitLiterals.Count - 1; i >= 0; i--)
+            {
+                var value = (template.Agent.WaitLiterals[i] ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    template.Agent.WaitLiterals.RemoveAt(i);
+                    continue;
+                }
+
+                template.Agent.WaitLiterals[i] = value;
+            }
+
+            for (var i = template.Agent.WaitRegex.Count - 1; i >= 0; i--)
+            {
+                var value = (template.Agent.WaitRegex[i] ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    template.Agent.WaitRegex.RemoveAt(i);
+                    continue;
+                }
+
+                template.Agent.WaitRegex[i] = value;
+            }
 
             template.Creation ??= new TemplateCreationDefinition();
             template.Creation.WorktreeBaseBranch = string.IsNullOrWhiteSpace(template.Creation.WorktreeBaseBranch)
@@ -284,6 +316,27 @@ namespace TopToolbar.Services.Workspaces
             {
                 errors.Add("agent.command is required when agent.enabled is true.");
             }
+
+            if (agent.WaitRegex != null)
+            {
+                for (var i = 0; i < agent.WaitRegex.Count; i++)
+                {
+                    var pattern = agent.WaitRegex[i];
+                    if (string.IsNullOrWhiteSpace(pattern))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        _ = new Regex(pattern, RegexOptions.IgnoreCase);
+                    }
+                    catch
+                    {
+                        errors.Add($"agent.waitRegex[{i.ToString(CultureInfo.InvariantCulture)}] is invalid regex.");
+                    }
+                }
+            }
         }
 
         private static void ValidateCreation(TemplateCreationDefinition creation, List<string> errors)
@@ -297,6 +350,24 @@ namespace TopToolbar.Services.Workspaces
             {
                 errors.Add("creation.worktreeBaseBranch is required when createWorktreeByDefault is true.");
             }
+        }
+
+        internal static string NormalizeKind(string kind)
+        {
+            var normalized = (kind ?? string.Empty).Trim().ToLowerInvariant();
+            if (normalized == "agent")
+            {
+                return "agent";
+            }
+
+            return "workspace";
+        }
+
+        internal static bool IsValidKind(string kind)
+        {
+            var normalized = NormalizeKind(kind);
+            return string.Equals(normalized, "workspace", StringComparison.Ordinal)
+                || string.Equals(normalized, "agent", StringComparison.Ordinal);
         }
     }
 }

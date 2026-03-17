@@ -13,6 +13,7 @@ using TopToolbar.Actions;
 using TopToolbar.Logging;
 using TopToolbar.Models;
 using TopToolbar.Providers;
+using TopToolbar.Services.Agents;
 using TopToolbar.Services;
 using TopToolbar.ViewModels;
 using WinUIEx;
@@ -35,6 +36,7 @@ namespace TopToolbar
         private readonly ToolbarViewModel _vm;
         private readonly NotificationService _notificationService;
         private readonly ToastWindow _toastWindow;
+        private readonly AgentSessionManager _agentSessionManager;
 
         private readonly TopToolbar.Stores.ToolbarStore _store = new();
         public ToolbarItemsViewModel ItemsViewModel { get; }
@@ -65,6 +67,9 @@ namespace TopToolbar
             _providerService = new ActionProviderService(_providerRuntime);
             _notificationService = new NotificationService(DispatcherQueue);
             _toastWindow = new ToastWindow(_notificationService);
+            _agentSessionManager = new AgentSessionManager();
+            _agentSessionManager.SessionChanged += OnAgentSessionChanged;
+            _agentSessionManager.Start();
             _actionExecutor = new ToolbarActionExecutor(_providerService, _contextFactory, DispatcherQueue, _notificationService);
             _builtinProvider = new BuiltinProvider();
             _vm = new ToolbarViewModel(_configService, _providerService, _contextFactory);
@@ -213,6 +218,18 @@ namespace TopToolbar
             {
             }
 
+            try
+            {
+                if (_agentSessionManager != null)
+                {
+                    _agentSessionManager.SessionChanged -= OnAgentSessionChanged;
+                    _agentSessionManager.Dispose();
+                }
+            }
+            catch
+            {
+            }
+
             GC.SuppressFinalize(this);
         }
 
@@ -234,6 +251,7 @@ namespace TopToolbar
             ApplyDisplayMode(_currentDisplayMode);
             SyncToastWindowTheme();
             UpdateToastWindowAnchor();
+            UpdateAgentHubVisualState();
             _initializedLayout = true;
         }
 
@@ -264,6 +282,37 @@ namespace TopToolbar
                 catch
                 {
                 }
+            }
+        }
+
+        private void OnToolbarScrollViewerPointerWheelChanged(object sender, PointerRoutedEventArgs e)
+        {
+            if (sender is not ScrollViewer scrollViewer || e == null)
+            {
+                return;
+            }
+
+            var delta = e.GetCurrentPoint(scrollViewer).Properties.MouseWheelDelta;
+            if (delta == 0 || scrollViewer.ScrollableWidth <= 0)
+            {
+                return;
+            }
+
+            var step = Math.Max(56d, ToolbarMetrics.ButtonContainerWidth * 0.85d);
+            var next = scrollViewer.HorizontalOffset - (Math.Sign(delta) * step);
+            if (next < 0)
+            {
+                next = 0;
+            }
+            else if (next > scrollViewer.ScrollableWidth)
+            {
+                next = scrollViewer.ScrollableWidth;
+            }
+
+            if (Math.Abs(next - scrollViewer.HorizontalOffset) > 0.5d)
+            {
+                scrollViewer.ChangeView(next, null, null, disableAnimation: false);
+                e.Handled = true;
             }
         }
 

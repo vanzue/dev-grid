@@ -31,6 +31,7 @@ namespace TopToolbar.Services.Workspaces
 
             template.SchemaVersion = 1;
             template.Name = WorkspaceStoragePaths.NormalizeTemplateName(template.Name);
+            template.Kind = TemplateDefinitionValidator.NormalizeKind(template.Kind);
 
             if (string.IsNullOrWhiteSpace(template.DisplayName))
             {
@@ -100,6 +101,17 @@ namespace TopToolbar.Services.Workspaces
                 if (ContainsRepoToken(template.Agent.Command) || ContainsRepoToken(template.Agent.WorkingDirectory))
                 {
                     return true;
+                }
+
+                if (template.Agent.Environment != null)
+                {
+                    foreach (var pair in template.Agent.Environment)
+                    {
+                        if (ContainsRepoToken(pair.Value))
+                        {
+                            return true;
+                        }
+                    }
                 }
             }
 
@@ -304,6 +316,50 @@ namespace TopToolbar.Services.Workspaces
             if (agent.Enabled && string.IsNullOrWhiteSpace(agent.Command))
             {
                 agent.Command = string.IsNullOrWhiteSpace(agent.Name) ? "copilot" : agent.Name;
+            }
+
+            agent.WaitLiterals ??= new List<string>();
+            agent.WaitRegex ??= new List<string>();
+            agent.Environment ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            if (agent.WaitLiterals.Count > 0)
+            {
+                var normalizedLiterals = new List<string>();
+                foreach (var value in agent.WaitLiterals)
+                {
+                    var candidate = (value ?? string.Empty).Trim();
+                    if (string.IsNullOrWhiteSpace(candidate))
+                    {
+                        continue;
+                    }
+
+                    if (!normalizedLiterals.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+                    {
+                        normalizedLiterals.Add(candidate);
+                    }
+                }
+
+                agent.WaitLiterals = normalizedLiterals;
+            }
+
+            if (agent.WaitRegex.Count > 0)
+            {
+                var normalizedRegex = new List<string>();
+                foreach (var value in agent.WaitRegex)
+                {
+                    var candidate = (value ?? string.Empty).Trim();
+                    if (string.IsNullOrWhiteSpace(candidate))
+                    {
+                        continue;
+                    }
+
+                    if (!normalizedRegex.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+                    {
+                        normalizedRegex.Add(candidate);
+                    }
+                }
+
+                agent.WaitRegex = normalizedRegex;
             }
         }
 

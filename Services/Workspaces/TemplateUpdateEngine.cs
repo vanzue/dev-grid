@@ -138,6 +138,9 @@ namespace TopToolbar.Services.Workspaces
 
             switch (path.ToLowerInvariant())
             {
+                case "kind":
+                    template.Kind = TemplateDefinitionValidator.NormalizeKind(ReadString(value));
+                    return string.Empty;
                 case "name":
                     template.Name = ReadString(value);
                     return string.Empty;
@@ -187,6 +190,18 @@ namespace TopToolbar.Services.Workspaces
                 case "agent.workingdirectory":
                     template.Agent ??= new TemplateAgentDefinition();
                     template.Agent.WorkingDirectory = ReadString(value);
+                    return string.Empty;
+                case "agent.waitliterals":
+                    template.Agent ??= new TemplateAgentDefinition();
+                    template.Agent.WaitLiterals = ReadStringList(value);
+                    return string.Empty;
+                case "agent.waitregex":
+                    template.Agent ??= new TemplateAgentDefinition();
+                    template.Agent.WaitRegex = ReadStringList(value);
+                    return string.Empty;
+                case "agent.env":
+                    template.Agent ??= new TemplateAgentDefinition();
+                    template.Agent.Environment = ReadStringMap(value);
                     return string.Empty;
                 case "creation":
                     return SetCreationObject(template, value);
@@ -255,6 +270,9 @@ namespace TopToolbar.Services.Workspaces
 
             switch (path.ToLowerInvariant())
             {
+                case "kind":
+                    template.Kind = "workspace";
+                    return string.Empty;
                 case "description":
                     template.Description = string.Empty;
                     return string.Empty;
@@ -271,6 +289,18 @@ namespace TopToolbar.Services.Workspaces
                 case "agent.command":
                     template.Agent ??= new TemplateAgentDefinition();
                     template.Agent.Command = string.Empty;
+                    return string.Empty;
+                case "agent.waitliterals":
+                    template.Agent ??= new TemplateAgentDefinition();
+                    template.Agent.WaitLiterals = new List<string>();
+                    return string.Empty;
+                case "agent.waitregex":
+                    template.Agent ??= new TemplateAgentDefinition();
+                    template.Agent.WaitRegex = new List<string>();
+                    return string.Empty;
+                case "agent.env":
+                    template.Agent ??= new TemplateAgentDefinition();
+                    template.Agent.Environment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                     return string.Empty;
                 default:
                     return $"Unsupported remove path '{path}'.";
@@ -551,6 +581,35 @@ namespace TopToolbar.Services.Workspaces
                     .Split(',', StringSplitOptions.RemoveEmptyEntries)
                     .Select(item => item.Trim())
                     .Where(item => !string.IsNullOrWhiteSpace(item)));
+            }
+
+            return values;
+        }
+
+        private static Dictionary<string, string> ReadStringMap(JsonElement element)
+        {
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                return values;
+            }
+
+            foreach (var property in element.EnumerateObject())
+            {
+                var key = (property.Name ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+
+                var item = property.Value;
+                var value = item.ValueKind switch
+                {
+                    JsonValueKind.String => item.GetString() ?? string.Empty,
+                    JsonValueKind.Null => string.Empty,
+                    _ => item.GetRawText(),
+                };
+                values[key] = value;
             }
 
             return values;

@@ -157,6 +157,18 @@ namespace TopToolbar.Services.Workspaces
                 {
                     return new CreateResult(false, $"Template '{templateName}' was not found.", null, false);
                 }
+
+                if (string.Equals(
+                    TemplateDefinitionValidator.NormalizeKind(template.Kind),
+                    "agent",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    return new CreateResult(
+                        false,
+                        $"Template '{templateName}' is an agent template and cannot be launched as a workspace window set.",
+                        null,
+                        false);
+                }
             }
             else
             {
@@ -394,6 +406,7 @@ namespace TopToolbar.Services.Workspaces
             return new TemplateDefinition
             {
                 SchemaVersion = 1,
+                Kind = "workspace",
                 Name = templateName,
                 DisplayName = BuildDisplayNameFromTemplateName(templateName),
                 Description = "Generated from ws new.",
@@ -975,6 +988,7 @@ namespace TopToolbar.Services.Workspaces
             return new TemplateDefinition
             {
                 SchemaVersion = template.SchemaVersion,
+                Kind = template.Kind,
                 Name = template.Name,
                 DisplayName = template.DisplayName,
                 Description = template.Description,
@@ -1019,6 +1033,12 @@ namespace TopToolbar.Services.Workspaces
                     Name = template.Agent?.Name ?? "copilot",
                     Command = template.Agent?.Command ?? string.Empty,
                     WorkingDirectory = template.Agent?.WorkingDirectory ?? "{repo}",
+                    WaitLiterals = template.Agent?.WaitLiterals?.Select(item => item).ToList() ?? new List<string>(),
+                    WaitRegex = template.Agent?.WaitRegex?.Select(item => item).ToList() ?? new List<string>(),
+                    Environment = template.Agent?.Environment?.ToDictionary(
+                        pair => pair.Key,
+                        pair => pair.Value,
+                        StringComparer.OrdinalIgnoreCase) ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
                 },
                 Creation = new TemplateCreationDefinition
                 {

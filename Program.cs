@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using TopToolbar.Logging;
+using TopToolbar.Services.Agents;
 using TopToolbar.Services.Pinning;
 using TopToolbar.Services.ShellIntegration;
 using TopToolbar.Services.Workspaces;
@@ -158,6 +159,11 @@ namespace TopToolbar
                 if (string.Equals(command, "mcp", StringComparison.OrdinalIgnoreCase))
                 {
                     return await HandleMcpCommandAsync(commandArgs).ConfigureAwait(false);
+                }
+
+                if (string.Equals(command, "agent", StringComparison.OrdinalIgnoreCase))
+                {
+                    return await HandleAgentCommandAsync(commandArgs).ConfigureAwait(false);
                 }
 
                 using var orchestrator = new WorkspaceTemplateOrchestrator();
@@ -522,6 +528,115 @@ namespace TopToolbar
             return await server.RunAsync(cancellation.Token).ConfigureAwait(false);
         }
 
+        private static Task<int> HandleAgentCommandAsync(string[] args)
+        {
+            if (args == null || args.Length == 0)
+            {
+                Console.Error.WriteLine("Agent subcommand is required.");
+                Console.Error.WriteLine("Usage: ws agent run --session <id> --command64 <base64> [--workdir <path>] [--template <id>] [--display <name>] [--backend <name>] [--initial-input <text>|--initial-input64 <base64>] [--wait-literal <value>] [--wait-regex <regex>] [--env NAME=VALUE] [--hold-open|--no-hold-open]");
+                return Task.FromResult(2);
+            }
+
+            var command = args[0];
+            var commandArgs = args.Skip(1).ToArray();
+            if (!string.Equals(command, "run", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.Error.WriteLine($"Unknown ws agent subcommand '{command}'.");
+                return Task.FromResult(2);
+            }
+
+            return HandleAgentRunCommandAsync(commandArgs);
+        }
+
+        private static async Task<int> HandleAgentRunCommandAsync(string[] args)
+        {
+            var unknown = GetUnknownOptions(
+                args,
+                "--session",
+                "--template",
+                "--display",
+                "--backend",
+                "--workdir",
+                "--command",
+                "--command64",
+                "--initial-input",
+                "--initial-input64",
+                "--wait-literal",
+                "--wait-regex",
+                "--env",
+                "--hold-open",
+                "--no-hold-open");
+            if (unknown.Count > 0)
+            {
+                Console.Error.WriteLine($"Unknown option(s): {string.Join(", ", unknown)}.");
+                return 2;
+            }
+
+            var sessionId = GetOptionValue(args, "--session");
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                Console.Error.WriteLine("--session is required.");
+                return 2;
+            }
+
+            var command = GetOptionValue(args, "--command");
+            var command64 = GetOptionValue(args, "--command64");
+            if (string.IsNullOrWhiteSpace(command) && string.IsNullOrWhiteSpace(command64))
+            {
+                Console.Error.WriteLine("Either --command or --command64 is required.");
+                return 2;
+            }
+
+            if (!string.IsNullOrWhiteSpace(command64))
+            {
+                try
+                {
+                    var raw = Convert.FromBase64String(command64.Trim());
+                    command = System.Text.Encoding.UTF8.GetString(raw);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Invalid --command64 value: {ex.Message}");
+                    return 2;
+                }
+            }
+
+            var initialInput = GetOptionValue(args, "--initial-input");
+            var initialInput64 = GetOptionValue(args, "--initial-input64");
+            if (!string.IsNullOrWhiteSpace(initialInput64))
+            {
+                try
+                {
+                    var raw = Convert.FromBase64String(initialInput64.Trim());
+                    initialInput = System.Text.Encoding.UTF8.GetString(raw);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Invalid --initial-input64 value: {ex.Message}");
+                    return 2;
+                }
+            }
+
+            var options = new AgentRunOptions
+            {
+                SessionId = sessionId.Trim(),
+                TemplateId = GetOptionValue(args, "--template"),
+                DisplayName = GetOptionValue(args, "--display"),
+                Backend = GetOptionValue(args, "--backend"),
+                WorkingDirectory = GetOptionValue(args, "--workdir"),
+                CommandLine = command ?? string.Empty,
+                InitialInput = initialInput ?? string.Empty,
+                WaitLiterals = GetOptionValues(args, "--wait-literal"),
+                WaitRegexPatterns = GetOptionValues(args, "--wait-regex"),
+                EnvironmentVariables = ParseEnvironmentOverrides(GetOptionValues(args, "--env")),
+                HoldOpen = !HasOption(args, "--no-hold-open") || HasOption(args, "--hold-open"),
+            };
+
+            using var linkedCts = new CancellationTokenSource();
+            using var runner = new AgentWrapRunner(options);
+            return await runner.RunAsync(linkedCts.Token).ConfigureAwait(false);
+        }
+
         private static async Task<int> HandleNewCommandAsync(WorkspaceTemplateOrchestrator orchestrator, string[] args)
         {
             var template = GetOptionValue(args, "--template");
@@ -845,6 +960,7 @@ namespace TopToolbar
             Console.WriteLine("ws switch --id <workspaceId> [--json] [--quiet]");
             Console.WriteLine("ws switch --template <template> --name \"<instanceName>\" [--json] [--quiet]");
             Console.WriteLine("ws mcp [--templates-dir <path>]");
+            Console.WriteLine("ws agent run --session <id> --command64 <base64> [--workdir <path>] [--template <id>] [--display <name>] [--backend <name>] [--initial-input <text>|--initial-input64 <base64>] [--wait-literal <value>] [--wait-regex <regex>] [--env NAME=VALUE] [--hold-open|--no-hold-open]");
         }
 
         private static IReadOnlyList<string> ParseFocusRoles(string raw)
@@ -878,6 +994,43 @@ namespace TopToolbar
             {
                 AppLogger.LogError("Failed to ensure data directories", ex);
             }
+        }
+
+        private static IReadOnlyDictionary<string, string> ParseEnvironmentOverrides(IReadOnlyList<string> values)
+        {
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (values == null || values.Count == 0)
+            {
+                return result;
+            }
+
+            foreach (var raw in values)
+            {
+                var text = (raw ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    continue;
+                }
+
+                var separator = text.IndexOf('=');
+                if (separator <= 0)
+                {
+                    continue;
+                }
+
+                var key = text[..separator].Trim();
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+
+                var value = separator + 1 >= text.Length
+                    ? string.Empty
+                    : text[(separator + 1)..];
+                result[key] = value;
+            }
+
+            return result;
         }
 
     }

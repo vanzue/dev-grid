@@ -615,13 +615,16 @@
                                         CornerRadius="12"
                                         Padding="12">
                                     <StackPanel Spacing="8">
-                                        <TextBlock Text="Template list"
+                                        <TextBlock Text="Template library"
                                                    FontSize="14"
                                                    FontWeight="SemiBold"/>
-                                        <ListView x:Name="TemplatesList"
+                                        <TextBlock Text="Workspace templates"
+                                                   Opacity="0.72"/>
+                                        <ListView x:Name="WorkspaceTemplatesList"
                                                   SelectionMode="Single"
-                                                  MinHeight="420"
-                                                  SelectionChanged="OnTemplatesListSelectionChanged"
+                                                  MinHeight="190"
+                                                  MaxHeight="220"
+                                                  SelectionChanged="OnWorkspaceTemplatesListSelectionChanged"
                                                   Margin="0,2,0,0">
                                             <ListView.ItemTemplate>
                                                 <DataTemplate>
@@ -629,7 +632,34 @@
                                                         <TextBlock Text="{Binding DisplayName}"
                                                                    FontWeight="SemiBold"
                                                                    TextTrimming="CharacterEllipsis"/>
-                                                        <TextBlock Text="{Binding Name}"
+                                                        <TextBlock Text="{Binding NameAndKind}"
+                                                                   Opacity="0.72"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding Description}"
+                                                                   Opacity="0.62"
+                                                                   TextWrapping="WrapWholeWords"
+                                                                   MaxLines="2"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ListView.ItemTemplate>
+                                        </ListView>
+
+                                        <TextBlock Text="Agent templates"
+                                                   Opacity="0.72"
+                                                   Margin="0,8,0,0"/>
+                                        <ListView x:Name="AgentTemplatesList"
+                                                  SelectionMode="Single"
+                                                  MinHeight="170"
+                                                  MaxHeight="200"
+                                                  SelectionChanged="OnAgentTemplatesListSelectionChanged"
+                                                  Margin="0,2,0,0">
+                                            <ListView.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Spacing="2" Padding="4,4,4,4">
+                                                        <TextBlock Text="{Binding DisplayName}"
+                                                                   FontWeight="SemiBold"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding NameAndKind}"
                                                                    Opacity="0.72"
                                                                    TextTrimming="CharacterEllipsis"/>
                                                         <TextBlock Text="{Binding Description}"
@@ -683,7 +713,16 @@
                                                      TextWrapping="Wrap"
                                                      MinHeight="64"/>
 
-                                            <Grid ColumnSpacing="10">
+                                            <TextBlock Text="Template type"
+                                                       Opacity="0.72"/>
+                                            <ComboBox x:Name="TemplateKindComboBox"
+                                                      SelectionChanged="OnTemplateKindSelectionChanged">
+                                                <ComboBoxItem Content="workspace"/>
+                                                <ComboBoxItem Content="agent"/>
+                                            </ComboBox>
+
+                                            <Grid x:Name="TemplateWorkspaceLayoutSection"
+                                                  ColumnSpacing="10">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="*"/>
@@ -733,58 +772,69 @@
                                                      PlaceholderText="Base branch (default: main)"
                                                      Text="main"/>
 
-                                            <Border Height="1"
+                                            <Border x:Name="TemplateAgentSectionDivider"
+                                                    Height="1"
                                                     Background="{ThemeResource CardStrokeColorDefaultBrush}"
                                                     Opacity="0.35"/>
 
-                                            <TextBlock Text="Agent"
-                                                       FontWeight="SemiBold"/>
-                                            <ToggleSwitch x:Name="TemplateEnableAgentToggle"
-                                                          Header="Enable agent command"
-                                                          IsOn="False"
-                                                          OnContent=""
-                                                          OffContent=""/>
-                                            <TextBlock Text="Agent runs inside the Terminal window."
-                                                       Opacity="0.62"/>
-                                            <ComboBox x:Name="TemplateAgentComboBox"
-                                                      SelectedIndex="0">
-                                                <ComboBoxItem Content="copilot"/>
-                                            </ComboBox>
-                                            <TextBox x:Name="TemplateAgentCommandTextBox"
-                                                     PlaceholderText="Agent command (for example: copilot)"/>
+                                            <StackPanel x:Name="TemplateAgentSection"
+                                                        Spacing="8"
+                                                        Visibility="Collapsed">
+                                                <TextBlock Text="Agent startup"
+                                                           FontWeight="SemiBold"/>
+                                                <TextBlock Text="Command to run in a new Windows Terminal window."
+                                                           Opacity="0.62"/>
+                                                <ToggleSwitch x:Name="TemplateEnableAgentToggle"
+                                                              Header="Enable agent command"
+                                                              Visibility="Collapsed"
+                                                              IsOn="False"
+                                                              OnContent=""
+                                                              OffContent=""/>
+                                                <ComboBox x:Name="TemplateAgentComboBox"
+                                                          Visibility="Collapsed"
+                                                          SelectedIndex="0">
+                                                    <ComboBoxItem Content="copilot"/>
+                                                </ComboBox>
+                                                <TextBox x:Name="TemplateAgentCommandTextBox"
+                                                         PlaceholderText="Agent command (for example: copilot)"/>
+                                            </StackPanel>
 
-                                            <Border Height="1"
+                                            <Border x:Name="TemplateWorkspaceAppsDivider"
+                                                    Height="1"
                                                     Background="{ThemeResource CardStrokeColorDefaultBrush}"
                                                     Opacity="0.35"/>
 
-                                            <TextBlock Text="Applications"
-                                                       FontWeight="SemiBold"/>
-                                            <TextBlock Text="Only enabled apps below are included in layout calculation."
-                                                       Opacity="0.62"/>
-                                            <ToggleSwitch x:Name="TemplateIncludeTerminalToggle"
-                                                          Header="Windows Terminal"
-                                                          IsOn="True"
-                                                          OnContent=""
-                                                          OffContent=""/>
-                                            <ToggleSwitch x:Name="TemplateIncludeVsCodeToggle"
-                                                          Header="VS Code"
-                                                          IsOn="True"
-                                                          OnContent=""
-                                                          OffContent=""/>
-                                            <ToggleSwitch x:Name="TemplateIncludeVisualStudioToggle"
-                                                          Header="Visual Studio (devenv)"
-                                                          IsOn="False"
-                                                          OnContent=""
-                                                          OffContent=""/>
-                                            <TextBox x:Name="TemplateVisualStudioSolutionTextBox"
-                                                     PlaceholderText="Optional .sln path relative to repo"/>
-                                            <ToggleSwitch x:Name="TemplateIncludeLogsToggle"
-                                                          Header="Logs folder"
-                                                          IsOn="False"
-                                                          OnContent=""
-                                                          OffContent=""/>
-                                            <TextBox x:Name="TemplateLogsPathTextBox"
-                                                     PlaceholderText="Folder path (default: {repo})"/>
+                                            <StackPanel x:Name="TemplateWorkspaceApplicationsSection"
+                                                        Spacing="8">
+                                                <TextBlock Text="Applications"
+                                                           FontWeight="SemiBold"/>
+                                                <TextBlock Text="Only enabled apps below are included in layout calculation."
+                                                           Opacity="0.62"/>
+                                                <ToggleSwitch x:Name="TemplateIncludeTerminalToggle"
+                                                              Header="Windows Terminal"
+                                                              IsOn="True"
+                                                              OnContent=""
+                                                              OffContent=""/>
+                                                <ToggleSwitch x:Name="TemplateIncludeVsCodeToggle"
+                                                              Header="VS Code"
+                                                              IsOn="True"
+                                                              OnContent=""
+                                                              OffContent=""/>
+                                                <ToggleSwitch x:Name="TemplateIncludeVisualStudioToggle"
+                                                              Header="Visual Studio (devenv)"
+                                                              IsOn="False"
+                                                              OnContent=""
+                                                              OffContent=""/>
+                                                <TextBox x:Name="TemplateVisualStudioSolutionTextBox"
+                                                         PlaceholderText="Optional .sln path relative to repo"/>
+                                                <ToggleSwitch x:Name="TemplateIncludeLogsToggle"
+                                                              Header="Logs folder"
+                                                              IsOn="False"
+                                                              OnContent=""
+                                                              OffContent=""/>
+                                                <TextBox x:Name="TemplateLogsPathTextBox"
+                                                         PlaceholderText="Folder path (default: {repo})"/>
+                                            </StackPanel>
 
                                             <TextBlock x:Name="TemplateEditorStatusText"
                                                        Opacity="0.72"
