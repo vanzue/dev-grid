@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net9.0-windows10.0.22621.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
@@ -55,19 +55,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="ShellExtensions\TopToolbar.ContextMenu\bin\$(Platform)\$(Configuration)\net9.0-windows10.0.19041.0\TopToolbar.ContextMenu.dll"
+    <Content Include="ShellExtensions\TopToolbar.ContextMenu\bin\$(Platform)\$(Configuration)\net9.0-windows10.0.22621.0\TopToolbar.ContextMenu.dll"
              Link="TopToolbar.ContextMenu.dll"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="ShellExtensions\TopToolbar.ContextMenu\bin\$(Platform)\$(Configuration)\net9.0-windows10.0.19041.0\TopToolbar.ContextMenu.comhost.dll"
+    <Content Include="ShellExtensions\TopToolbar.ContextMenu\bin\$(Platform)\$(Configuration)\net9.0-windows10.0.22621.0\TopToolbar.ContextMenu.comhost.dll"
              Link="TopToolbar.ContextMenu.comhost.dll"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="ShellExtensions\TopToolbar.ContextMenu\bin\$(Platform)\$(Configuration)\net9.0-windows10.0.19041.0\TopToolbar.ContextMenu.runtimeconfig.json"
+    <Content Include="ShellExtensions\TopToolbar.ContextMenu\bin\$(Platform)\$(Configuration)\net9.0-windows10.0.22621.0\TopToolbar.ContextMenu.runtimeconfig.json"
              Link="TopToolbar.ContextMenu.runtimeconfig.json"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="ShellExtensions\TopToolbar.ContextMenu\bin\$(Platform)\$(Configuration)\net9.0-windows10.0.19041.0\TopToolbar.ContextMenu.deps.json"
+    <Content Include="ShellExtensions\TopToolbar.ContextMenu\bin\$(Platform)\$(Configuration)\net9.0-windows10.0.22621.0\TopToolbar.ContextMenu.deps.json"
              Link="TopToolbar.ContextMenu.deps.json"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
@@ -91,7 +91,7 @@
 
   <Target Name="BuildContextMenuArtifacts"
           BeforeTargets="PrepareForBuild"
-          Condition="'$(DesignTimeBuild)' != 'true' and !Exists('ShellExtensions\TopToolbar.ContextMenu\bin\$(Platform)\$(Configuration)\net9.0-windows10.0.19041.0\TopToolbar.ContextMenu.comhost.dll')">
+          Condition="'$(DesignTimeBuild)' != 'true' and !Exists('ShellExtensions\TopToolbar.ContextMenu\bin\$(Platform)\$(Configuration)\net9.0-windows10.0.22621.0\TopToolbar.ContextMenu.comhost.dll')">
     <MSBuild Projects="ShellExtensions\TopToolbar.ContextMenu\TopToolbar.ContextMenu.csproj"
              Targets="Build"
              Properties="Configuration=$(Configuration);Platform=$(Platform);RuntimeIdentifier=" />

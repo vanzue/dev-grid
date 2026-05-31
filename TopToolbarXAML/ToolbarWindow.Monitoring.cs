@@ -61,8 +61,20 @@ namespace TopToolbar
                 {
                     var winPos = this.AppWindow.Position;
                     var winSize = this.AppWindow.Size;
-                    bool overToolbar = pt.X >= winPos.X && pt.X <= winPos.X + winSize.Width &&
-                                       pt.Y >= winPos.Y && pt.Y <= winPos.Y + winSize.Height;
+
+                    // The window is larger than the visible toolbar by ToolbarShadowPaddingValue
+                    // (DIP) on every side. Inset the hit rectangle by that padding (converted to
+                    // physical pixels) so the cursor is only treated as "over" the visible toolbar,
+                    // not the surrounding transparent shadow margin.
+                    double scale = ToolbarContainer?.XamlRoot?.RasterizationScale ?? 1.0;
+                    int pad = (int)Math.Round(ToolbarMetrics.ToolbarShadowPaddingValue * scale);
+                    int left = winPos.X + pad;
+                    int top = winPos.Y + pad;
+                    int right = winPos.X + winSize.Width - pad;
+                    int bottom = winPos.Y + winSize.Height - pad;
+
+                    bool overToolbar = pt.X >= left && pt.X <= right &&
+                                       pt.Y >= top && pt.Y <= bottom;
                     bool overTriggerWindow = IsPointInRect(pt.X, pt.Y, triggerLeft, triggerTop, triggerRight, triggerBottom);
                     if (!overToolbar && !overTriggerWindow)
                     {
