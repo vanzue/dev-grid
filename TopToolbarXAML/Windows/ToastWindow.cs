@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Specialized;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -56,6 +57,7 @@ namespace TopToolbar
         private string _lastAnchorSignature = string.Empty;
         private string _lastPlacementSignature = string.Empty;
         private bool? _isClickThrough;
+        private bool _hasActionableToasts;
 
         private delegate IntPtr WndProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
@@ -191,6 +193,54 @@ namespace TopToolbar
             {
                 AppLogger.LogWarning("ToastWindow.Prompt: failed to enqueue prompt on dispatcher.");
                 tcs.TrySetResult(null);
+            }
+
+            return tcs.Task;
+        }
+
+        public Task<bool> ShowConfirmationPromptAsync(
+            string title,
+            string prompt,
+            string confirmButtonText = "Confirm",
+            string cancelButtonText = "Cancel",
+            string subtitle = "")
+        {
+            var dispatcher = DispatcherQueue;
+            AppLogger.LogInfo(
+                $"ToastWindow.Prompt: ShowConfirmationPromptAsync called. dispatcherNull={dispatcher == null}, hasThreadAccess={dispatcher?.HasThreadAccess ?? true}");
+
+            if (DispatcherQueue == null || DispatcherQueue.HasThreadAccess)
+            {
+                return ShowConfirmationPromptCoreAsync(
+                    title,
+                    prompt,
+                    confirmButtonText,
+                    cancelButtonText,
+                    subtitle);
+            }
+
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!DispatcherQueue.TryEnqueue(async () =>
+            {
+                try
+                {
+                    var value = await ShowConfirmationPromptCoreAsync(
+                            title,
+                            prompt,
+                            confirmButtonText,
+                            cancelButtonText,
+                            subtitle)
+                        .ConfigureAwait(true);
+                    tcs.TrySetResult(value);
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
+                }
+            }))
+            {
+                AppLogger.LogWarning("ToastWindow.Prompt: failed to enqueue confirmation prompt on dispatcher.");
+                tcs.TrySetResult(false);
             }
 
             return tcs.Task;
@@ -547,6 +597,250 @@ namespace TopToolbar
             }
         }
 
+        private async Task<bool> ShowConfirmationPromptCoreAsync(
+            string title,
+            string prompt,
+            string confirmButtonText,
+            string cancelButtonText,
+            string subtitle)
+        {
+            _activePromptCount++;
+            try
+            {
+                UpdateClickThroughMode(promptActive: true);
+                UpdatePlacement();
+                AppLogger.LogInfo(
+                    $"ToastWindow.Prompt: confirmation open requested. activePrompts={_activePromptCount}, anchor=({_anchorPosition.X},{_anchorPosition.Y},{_anchorSize.Width},{_anchorSize.Height}), anchorVisible={_anchorVisible}");
+
+                var labelColor = ResolveBrushColor(_toastLabel, Color.FromArgb(0xFF, 0x2F, 0x3A, 0x3F));
+                var accentColor = ResolveBrushColor(_toastAccent, Color.FromArgb(0xFF, 0xD1, 0x34, 0x38));
+                var scrimColor = Color.FromArgb(0x68, 0x0D, 0x12, 0x17);
+                var subtleTextBrush = new SolidColorBrush(Color.FromArgb(0xD6, labelColor.R, labelColor.G, labelColor.B));
+                var secondaryButtonBackgroundBrush = new SolidColorBrush(Color.FromArgb(0x22, labelColor.R, labelColor.G, labelColor.B));
+                var secondaryButtonBorderBrush = new SolidColorBrush(Color.FromArgb(0x66, labelColor.R, labelColor.G, labelColor.B));
+                var primaryButtonBackgroundBrush = new SolidColorBrush(accentColor);
+
+                using var overlay = await TransparentOverlayHost.CreateAsync(this, fullscreen: true)
+                    .ConfigureAwait(true);
+                if (overlay == null || overlay.Root?.XamlRoot == null)
+                {
+                    AppLogger.LogWarning("ToastWindow.Prompt: confirmation overlay host creation failed.");
+                    return false;
+                }
+
+                var overlayPos = overlay.Host?.AppWindow?.Position ?? new PointInt32(0, 0);
+                var overlaySize = overlay.Host?.AppWindow?.Size ?? new SizeInt32(0, 0);
+                var rootScale = overlay.Root.XamlRoot.RasterizationScale <= 0 ? 1d : overlay.Root.XamlRoot.RasterizationScale;
+                var rootWidth = overlaySize.Width > 0 ? overlaySize.Width / rootScale : overlay.Root.XamlRoot.Size.Width;
+                var rootHeight = overlaySize.Height > 0 ? overlaySize.Height / rootScale : overlay.Root.XamlRoot.Size.Height;
+                if (rootWidth > 0 && rootHeight > 0)
+                {
+                    overlay.Root.Width = rootWidth;
+                    overlay.Root.Height = rootHeight;
+                }
+
+                AppLogger.LogInfo(
+                    $"ToastWindow.Prompt: confirmation overlay ready. pos=({overlayPos.X},{overlayPos.Y}), size=({overlaySize.Width},{overlaySize.Height}), rootLoaded={overlay.Root.IsLoaded}, xamlRootNull={overlay.Root.XamlRoot == null}, rootSize=({overlay.Root.Width:0.##},{overlay.Root.Height:0.##})");
+
+                var resultSource = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var completionState = 0;
+                var scrim = new Grid
+                {
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    VerticalAlignment = VerticalAlignment.Stretch,
+                    Background = new SolidColorBrush(scrimColor),
+                };
+                if (rootWidth > 0 && rootHeight > 0)
+                {
+                    scrim.Width = rootWidth;
+                    scrim.Height = rootHeight;
+                }
+
+                var card = new Border
+                {
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    MinWidth = 420,
+                    MaxWidth = 640,
+                    Padding = new Thickness(18),
+                    CornerRadius = new CornerRadius(16),
+                    BorderThickness = new Thickness(1),
+                    Background = CloneBrush(_toastBackground) ?? new SolidColorBrush(Color.FromArgb(0xEA, 0xFC, 0xF7, 0xF1)),
+                    BorderBrush = CloneBrush(_toastBorder) ?? new SolidColorBrush(Color.FromArgb(0x80, 0xFF, 0xFF, 0xFF)),
+                };
+                card.Shadow = new ThemeShadow();
+                card.Translation = new System.Numerics.Vector3(0, 0, 14);
+
+                var headerPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 12,
+                };
+
+                var headerIcon = new Border
+                {
+                    Width = 34,
+                    Height = 34,
+                    CornerRadius = new CornerRadius(17),
+                    Background = new SolidColorBrush(Color.FromArgb(0xD9, accentColor.R, accentColor.G, accentColor.B)),
+                    Child = new FontIcon
+                    {
+                        Glyph = "\uE7BA",
+                        FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                        FontSize = 14,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+                    },
+                };
+                headerPanel.Children.Add(headerIcon);
+
+                var headingStack = new StackPanel
+                {
+                    Spacing = 2,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                headingStack.Children.Add(new TextBlock
+                {
+                    Text = string.IsNullOrWhiteSpace(title) ? "Confirm action" : title.Trim(),
+                    FontSize = 20,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Foreground = CloneBrush(_toastLabel) ?? new SolidColorBrush(labelColor),
+                    FontFamily = _textFontFamily,
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                headingStack.Children.Add(new TextBlock
+                {
+                    Text = string.IsNullOrWhiteSpace(subtitle)
+                        ? "Choose whether to continue."
+                        : subtitle.Trim(),
+                    Foreground = subtleTextBrush,
+                    FontFamily = _textFontFamily,
+                    FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap,
+                });
+
+                headerPanel.Children.Add(headingStack);
+
+                var bodyText = new TextBlock
+                {
+                    Text = string.IsNullOrWhiteSpace(prompt)
+                        ? "Continue?"
+                        : prompt.Trim(),
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = CloneBrush(_toastLabel) ?? new SolidColorBrush(labelColor),
+                    FontFamily = _textFontFamily,
+                    FontSize = 13,
+                };
+
+                var cardStack = new StackPanel { Spacing = 14 };
+                cardStack.Children.Add(headerPanel);
+                cardStack.Children.Add(bodyText);
+
+                var actionRow = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 10,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                };
+
+                var cancelButton = new Button
+                {
+                    Content = string.IsNullOrWhiteSpace(cancelButtonText) ? "Cancel" : cancelButtonText.Trim(),
+                    MinWidth = 104,
+                    CornerRadius = new CornerRadius(10),
+                    Padding = new Thickness(14, 8, 14, 8),
+                    BorderThickness = new Thickness(1),
+                    Background = secondaryButtonBackgroundBrush,
+                    BorderBrush = secondaryButtonBorderBrush,
+                    Foreground = CloneBrush(_toastLabel) ?? new SolidColorBrush(labelColor),
+                    FontFamily = _textFontFamily,
+                };
+
+                var confirmButton = new Button
+                {
+                    Content = string.IsNullOrWhiteSpace(confirmButtonText) ? "Confirm" : confirmButtonText.Trim(),
+                    MinWidth = 136,
+                    CornerRadius = new CornerRadius(10),
+                    Padding = new Thickness(14, 8, 14, 8),
+                    BorderThickness = new Thickness(0),
+                    Background = primaryButtonBackgroundBrush,
+                    Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+                    FontFamily = _textFontFamily,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                };
+
+                actionRow.Children.Add(cancelButton);
+                actionRow.Children.Add(confirmButton);
+                cardStack.Children.Add(actionRow);
+                card.Child = cardStack;
+                scrim.Children.Add(card);
+                overlay.Root.Children.Add(scrim);
+                overlay.Root.UpdateLayout();
+                scrim.UpdateLayout();
+                card.UpdateLayout();
+
+                void Complete(bool confirmed)
+                {
+                    if (Interlocked.Exchange(ref completionState, 1) != 0)
+                    {
+                        return;
+                    }
+
+                    confirmButton.IsEnabled = false;
+                    cancelButton.IsEnabled = false;
+                    resultSource.TrySetResult(confirmed);
+                }
+
+                confirmButton.Click += (_, __) => Complete(true);
+                cancelButton.Click += (_, __) => Complete(false);
+
+                card.Loaded += (_, __) =>
+                {
+                    var overlayWindowPos = overlay.Host?.AppWindow?.Position ?? new PointInt32(0, 0);
+                    var overlayWindowSize = overlay.Host?.AppWindow?.Size ?? new SizeInt32(0, 0);
+                    AppLogger.LogInfo(
+                        $"ToastWindow.Prompt: confirmation card loaded. overlayPos=({overlayWindowPos.X},{overlayWindowPos.Y}), overlaySize=({overlayWindowSize.Width},{overlayWindowSize.Height}), cardSize=({card.ActualWidth:0.##},{card.ActualHeight:0.##})");
+                    confirmButton.Focus(FocusState.Programmatic);
+                };
+
+                var promptResult = await resultSource.Task.ConfigureAwait(true);
+                AppLogger.LogInfo($"ToastWindow.Prompt: confirmation result={(promptResult ? "Confirm" : "Cancel")}.");
+                await RunOnUiThreadAsync(() =>
+                {
+                    if (overlay.Root?.Children == null)
+                    {
+                        return;
+                    }
+
+                    var index = overlay.Root.Children.IndexOf(scrim);
+                    if (index >= 0)
+                    {
+                        overlay.Root.Children.RemoveAt(index);
+                    }
+
+                    try
+                    {
+                        overlay.Host?.Close();
+                        AppLogger.LogInfo("ToastWindow.Prompt: confirmation overlay host closed.");
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.LogWarning($"ToastWindow.Prompt: confirmation overlay close failed - {ex.Message}");
+                    }
+                }).ConfigureAwait(false);
+
+                return promptResult;
+            }
+            finally
+            {
+                _activePromptCount = Math.Max(0, _activePromptCount - 1);
+                AppLogger.LogInfo($"ToastWindow.Prompt: confirmation closed. activePrompts={_activePromptCount}");
+                UpdateClickThroughMode(promptActive: _activePromptCount > 0);
+                UpdatePlacement();
+            }
+        }
+
         private void OnNotificationCollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
         {
             if (DispatcherQueue == null || DispatcherQueue.HasThreadAccess)
@@ -610,6 +904,15 @@ namespace TopToolbar
 
                 _toastStack.Children.Add(CreateToastCard(item));
             }
+
+            var hasActionable = _notificationService.Items.Any(i => i?.HasAction == true);
+            if (_hasActionableToasts != hasActionable)
+            {
+                _hasActionableToasts = hasActionable;
+                _isClickThrough = null; // force re-evaluation in UpdateClickThroughMode
+                _root.IsHitTestVisible = hasActionable;
+                _toastStack.IsHitTestVisible = hasActionable;
+            }
         }
 
         private Border CreateToastCard(NotificationItem item)
@@ -630,6 +933,7 @@ namespace TopToolbar
                     new ColumnDefinition { Width = GridLength.Auto },
                     new ColumnDefinition { Width = GridLength.Auto },
                     new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                    new ColumnDefinition { Width = GridLength.Auto },
                 },
                 VerticalAlignment = VerticalAlignment.Center,
             };
@@ -684,6 +988,28 @@ namespace TopToolbar
             };
             Grid.SetColumn(messageText, 2);
             body.Children.Add(messageText);
+
+            if (item.HasAction)
+            {
+                var actionButton = new Button
+                {
+                    Content = item.ActionText,
+                    MinWidth = 84,
+                    Margin = new Thickness(12, 0, 0, 0),
+                    Padding = new Thickness(12, 6, 12, 6),
+                    CornerRadius = new CornerRadius(8),
+                    BorderThickness = new Thickness(0),
+                    Background = accentBrush,
+                    Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+                    FontFamily = _textFontFamily,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                actionButton.Click += async (_, __) => await _notificationService.InvokeActionAsync(item.Id).ConfigureAwait(true);
+                Grid.SetColumn(actionButton, 3);
+                body.Children.Add(actionButton);
+            }
 
             return new Border
             {
@@ -883,7 +1209,8 @@ namespace TopToolbar
         {
             // Toast mode should never block input to underlying windows.
             // Prompt mode must receive input for buttons/textbox.
-            var shouldClickThrough = !promptActive;
+            // Action toasts also need input to allow button clicks.
+            var shouldClickThrough = !promptActive && !_hasActionableToasts;
             if (_isClickThrough.HasValue && _isClickThrough.Value == shouldClickThrough)
             {
                 return;

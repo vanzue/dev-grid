@@ -5,10 +5,8 @@
     xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
     xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
     xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
-    xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
     xmlns:desktop5="http://schemas.microsoft.com/appx/manifest/desktop/windows10/5"
-    xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
-    IgnorableNamespaces="uap uap5 rescap desktop desktop4 desktop5 com">
+    IgnorableNamespaces="uap uap5 rescap desktop desktop5">
   <Identity
       Name="TopToolbar"
       Publisher="CN=TopToolbarDev"
@@ -45,23 +43,6 @@
         <desktop:Extension Category="windows.startupTask" Executable="TopToolbar.exe" EntryPoint="Windows.FullTrustApplication">
           <desktop:StartupTask TaskId="TopToolbarStartup" Enabled="false" DisplayName="Dev Grid" />
         </desktop:Extension>
-        <com:Extension Category="windows.comServer">
-          <com:ComServer>
-            <com:SurrogateServer DisplayName="Dev Grid Context Menu">
-              <com:Class Id="3B8F00F1-1335-4D86-9EAF-C75857D53599" Path="TopToolbar.ContextMenu.comhost.dll" ThreadingModel="STA" />
-            </com:SurrogateServer>
-          </com:ComServer>
-        </com:Extension>
-        <desktop4:Extension Category="windows.fileExplorerContextMenus">
-          <desktop4:FileExplorerContextMenus>
-            <desktop5:ItemType Type="*">
-              <desktop5:Verb Id="TopToolbarPinFile" Clsid="3B8F00F1-1335-4D86-9EAF-C75857D53599" />
-            </desktop5:ItemType>
-            <desktop5:ItemType Type="Directory">
-              <desktop5:Verb Id="TopToolbarPinFolder" Clsid="3B8F00F1-1335-4D86-9EAF-C75857D53599" />
-            </desktop5:ItemType>
-          </desktop4:FileExplorerContextMenus>
-        </desktop4:Extension>
       </Extensions>
     </Application>
   </Applications>

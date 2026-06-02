@@ -179,7 +179,6 @@
                                                             IsEnabled="{x:Bind IsEnabled, Mode=OneWay}"
                                                             Tag="{x:Bind}"
                                                             Click="OnToolbarButtonClick"
-                                                            RightTapped="OnToolbarButtonRightTapped"
                                                             ToolTipService.ToolTip="{x:Bind Button.ToolTipText, Mode=OneWay}">
                                                             <Grid
                                                                 Width="{x:Bind local:ToolbarMetrics.ToolbarButtonSize}"
@@ -338,7 +337,6 @@
                                                 Style="{StaticResource ToolbarIconButtonStyle}"
                                                 Tag="{Binding}"
                                                 Click="OnAgentSessionChipClick"
-                                                RightTapped="OnAgentSessionChipRightTapped"
                                                 ToolTipService.ToolTip="{Binding ToolTip}">
                                                 <Grid
                                                     Width="52"

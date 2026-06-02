@@ -326,9 +326,17 @@ namespace TopToolbar.Services.Workspaces
                 result.LaunchedCount = successfulApps.Count(r => r.LaunchedNew);
                 LogPerf($"WorkspaceRuntime: Phase 1 done in {swPhase1.ElapsedMilliseconds} ms - {successfulApps.Count}/{appCount} apps ready, minimized-missing={minimizedMissingCount}");
 
-                if (successfulApps.Count == 0 && minimizedMissingCount == 0)
+                if (successfulApps.Count < appCount)
                 {
-                    result.Errors.Add("launch-timeout: no windows were assigned or launched.");
+                    var missingApps = apps
+                        .Where(app => app != null)
+                        .Where(app => !successfulApps.Any(r => string.Equals(r.App?.Id, app.Id, StringComparison.OrdinalIgnoreCase)))
+                        .Select(DescribeApp)
+                        .ToList();
+                    var missingPreview = string.Join(", ", missingApps.Take(3));
+                    var missingSuffix = missingApps.Count > 3 ? ", ..." : string.Empty;
+                    result.Errors.Add(
+                        $"launch-incomplete: {successfulApps.Count}/{appCount} window(s) ready; missing={missingApps.Count} [{missingPreview}{missingSuffix}]");
                     return FinalizeResult(false);
                 }
 

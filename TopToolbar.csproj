@@ -31,7 +31,6 @@
 
   <ItemGroup>
     <Page Remove="TopToolbarXAML\App.xaml" />
-    <Compile Remove="ShellExtensions\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -55,25 +54,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="ShellExtensions\TopToolbar.ContextMenu\bin\$(Platform)\$(Configuration)\net9.0-windows10.0.22621.0\TopToolbar.ContextMenu.dll"
-             Link="TopToolbar.ContextMenu.dll"
-             CopyToOutputDirectory="PreserveNewest"
-             CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="ShellExtensions\TopToolbar.ContextMenu\bin\$(Platform)\$(Configuration)\net9.0-windows10.0.22621.0\TopToolbar.ContextMenu.comhost.dll"
-             Link="TopToolbar.ContextMenu.comhost.dll"
-             CopyToOutputDirectory="PreserveNewest"
-             CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="ShellExtensions\TopToolbar.ContextMenu\bin\$(Platform)\$(Configuration)\net9.0-windows10.0.22621.0\TopToolbar.ContextMenu.runtimeconfig.json"
-             Link="TopToolbar.ContextMenu.runtimeconfig.json"
-             CopyToOutputDirectory="PreserveNewest"
-             CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="ShellExtensions\TopToolbar.ContextMenu\bin\$(Platform)\$(Configuration)\net9.0-windows10.0.22621.0\TopToolbar.ContextMenu.deps.json"
-             Link="TopToolbar.ContextMenu.deps.json"
-             CopyToOutputDirectory="PreserveNewest"
-             CopyToPublishDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Include="TopToolbarProviders\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
@@ -88,14 +68,6 @@
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
-
-  <Target Name="BuildContextMenuArtifacts"
-          BeforeTargets="PrepareForBuild"
-          Condition="'$(DesignTimeBuild)' != 'true' and !Exists('ShellExtensions\TopToolbar.ContextMenu\bin\$(Platform)\$(Configuration)\net9.0-windows10.0.22621.0\TopToolbar.ContextMenu.comhost.dll')">
-    <MSBuild Projects="ShellExtensions\TopToolbar.ContextMenu\TopToolbar.ContextMenu.csproj"
-             Targets="Build"
-             Properties="Configuration=$(Configuration);Platform=$(Platform);RuntimeIdentifier=" />
-  </Target>
 </Project>
 
 

@@ -70,7 +70,12 @@ namespace TopToolbar
             _agentSessionManager = new AgentSessionManager();
             _agentSessionManager.SessionChanged += OnAgentSessionChanged;
             _agentSessionManager.Start();
-            _actionExecutor = new ToolbarActionExecutor(_providerService, _contextFactory, DispatcherQueue, _notificationService);
+            _actionExecutor = new ToolbarActionExecutor(
+                _providerService,
+                _contextFactory,
+                DispatcherQueue,
+                _notificationService,
+                HandleWorkspaceLaunchFailureAsync);
             _builtinProvider = new BuiltinProvider();
             _vm = new ToolbarViewModel(_configService, _providerService, _contextFactory);
             ItemsViewModel = new ToolbarItemsViewModel(_store);
@@ -316,51 +321,47 @@ namespace TopToolbar
             }
         }
 
-        private void OnToolbarButtonRightTapped(object sender, RightTappedRoutedEventArgs e)
-        {
-            e.Handled = true;
 
-            if (sender is FrameworkElement target &&
-                target.Tag is ToolbarButtonItem item &&
-                TryGetRuntimeWorkspaceId(item, out var workspaceId))
+        private System.Threading.Tasks.Task HandleWorkspaceLaunchFailureAsync(
+            ToolbarButton button,
+            ToolbarAction action,
+            string failureMessage,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (button == null || action == null)
             {
-                ShowRuntimeWorkspaceMenu(target, workspaceId, item.Button?.DisplayName);
-                return;
+                return System.Threading.Tasks.Task.CompletedTask;
             }
 
-            OpenSettingsWindow();
+            if (!TryGetRuntimeWorkspaceId(button, out var workspaceId))
+            {
+                return System.Threading.Tasks.Task.CompletedTask;
+            }
+
+            var workspaceName = button.DisplayName;
+            var message = $"{workspaceName} failed to launch.";
+
+            _notificationService.ShowAction(
+                NotificationKind.Error,
+                message,
+                "Delete",
+                () => RemoveRuntimeWorkspaceAsync(workspaceId, workspaceName),
+                TimeSpan.FromSeconds(10));
+
+            return System.Threading.Tasks.Task.CompletedTask;
         }
 
-        private void ShowRuntimeWorkspaceMenu(
-            FrameworkElement target,
-            string workspaceId,
-            string workspaceName)
-        {
-            var flyout = new MenuFlyout();
-            var removeItem = new MenuFlyoutItem
-            {
-                Text = "Remove workspace",
-                Icon = new FontIcon { Glyph = "\uE74D" },
-            };
-
-            removeItem.Click += async (_, __) =>
-            {
-                await RemoveRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
-            };
-
-            flyout.Items.Add(removeItem);
-            flyout.ShowAt(target);
-        }
-
-        private static bool TryGetRuntimeWorkspaceId(ToolbarButtonItem item, out string workspaceId)
+        private static bool TryGetRuntimeWorkspaceId(ToolbarButton button, out string workspaceId)
         {
             workspaceId = string.Empty;
-            if (item?.Button == null)
+            if (button == null)
             {
                 return false;
             }
 
-            var action = item.Button.Action;
+            var action = button.Action;
             if (action != null &&
                 action.Type == ToolbarActionType.Provider &&
                 string.Equals(action.ProviderId, WorkspaceProviderId, StringComparison.OrdinalIgnoreCase) &&
@@ -372,7 +373,7 @@ namespace TopToolbar
 
             if (string.IsNullOrWhiteSpace(workspaceId))
             {
-                var buttonId = item.Button.Id?.Trim() ?? string.Empty;
+                var buttonId = button.Id?.Trim() ?? string.Empty;
                 if (buttonId.StartsWith(WorkspaceButtonIdPrefix, StringComparison.OrdinalIgnoreCase))
                 {
                     workspaceId = buttonId.Substring(WorkspaceButtonIdPrefix.Length).Trim();

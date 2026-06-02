@@ -12,8 +12,6 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using TopToolbar.Logging;
 using TopToolbar.Services.Agents;
-using TopToolbar.Services.Pinning;
-using TopToolbar.Services.ShellIntegration;
 using TopToolbar.Services.Workspaces;
 using TopToolbar.Serialization;
 
@@ -69,12 +67,11 @@ namespace TopToolbar
             try
             {
                 // Win11 menu integration is provided by the packaged COM verb.
-                // Always remove legacy HKCU shell verbs to avoid duplicate entries.
-                ContextMenuRegistrationService.RemoveRegistrationForCurrentUser();
+                // Legacy shell menu integration is no longer supported.
             }
             catch (Exception ex)
             {
-                AppLogger.LogWarning($"ContextMenuRegistration: cleanup failed - {ex.Message}");
+                AppLogger.LogWarning($"Cleanup: {ex.Message}");
             }
 
             Application.Start(args =>
@@ -101,35 +98,6 @@ namespace TopToolbar
                 {
                     AppLogger.LogError("WorkspaceCommand: unhandled exception", ex);
                     Console.Error.WriteLine(ex.Message);
-                    Environment.ExitCode = 1;
-                }
-
-                return true;
-            }
-
-            for (var i = 0; i < args.Length; i++)
-            {
-                if (!string.Equals(args[i], "--pin", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                if (i + 1 >= args.Length)
-                {
-                    AppLogger.LogWarning("PinCommand: '--pin' argument requires a path.");
-                    return true;
-                }
-
-                var inputPath = args[i + 1];
-                var ok = ToolbarPinService.TryPinPath(inputPath, out var message);
-                if (ok)
-                {
-                    AppLogger.LogInfo($"PinCommand: '{inputPath}' => {message}");
-                    Environment.ExitCode = 0;
-                }
-                else
-                {
-                    AppLogger.LogWarning($"PinCommand: '{inputPath}' failed - {message}");
                     Environment.ExitCode = 1;
                 }
 

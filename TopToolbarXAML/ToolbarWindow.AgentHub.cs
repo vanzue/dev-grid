@@ -186,67 +186,6 @@ namespace TopToolbar
             }
         }
 
-        private void OnAgentSessionChipRightTapped(object sender, RightTappedRoutedEventArgs e)
-        {
-            e.Handled = true;
-            if (sender is not FrameworkElement { Tag: AgentSessionChipItem chip })
-            {
-                return;
-            }
-
-            var session = (_agentSessionManager?.GetSessionsSnapshot() ?? Array.Empty<AgentSessionRecord>())
-                .FirstOrDefault(item => string.Equals(item.SessionId, chip.SessionId, StringComparison.OrdinalIgnoreCase));
-            if (session == null)
-            {
-                return;
-            }
-
-            var flyout = new MenuFlyout();
-            var focusItem = new MenuFlyoutItem
-            {
-                Text = "Focus",
-                Icon = new FontIcon { Glyph = "\uE8A7" },
-            };
-            focusItem.Click += (_, __) =>
-            {
-                if (!_agentSessionManager.TryFocusSession(session.SessionId, out var message))
-                {
-                    var details = string.IsNullOrWhiteSpace(message)
-                        ? "Window not found."
-                        : message;
-                    _notificationService.ShowError($"Unable to focus '{session.DisplayName}': {details}");
-                }
-            };
-            flyout.Items.Add(focusItem);
-
-            var terminateItem = new MenuFlyoutItem
-            {
-                Text = "Terminate",
-                Icon = new FontIcon { Glyph = "\uE711" },
-                IsEnabled = session.IsActive,
-            };
-            terminateItem.Click += (_, __) =>
-            {
-                if (!_agentSessionManager.TerminateSession(session.SessionId))
-                {
-                    _notificationService.ShowError($"Unable to terminate '{session.DisplayName}'.");
-                }
-            };
-            flyout.Items.Add(terminateItem);
-
-            var archiveItem = new MenuFlyoutItem
-            {
-                Text = "Archive",
-                Icon = new FontIcon { Glyph = "\uE74D" },
-            };
-            archiveItem.Click += (_, __) =>
-            {
-                _ = _agentSessionManager.ArchiveSession(session.SessionId);
-                UpdateAgentHubVisualState();
-            };
-            flyout.Items.Add(archiveItem);
-            flyout.ShowAt(sender as FrameworkElement);
-        }
 
         private async Task LaunchAgentFromTemplateAsync()
         {

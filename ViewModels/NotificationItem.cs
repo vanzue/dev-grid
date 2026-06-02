@@ -18,16 +18,17 @@ namespace TopToolbar.ViewModels
     public sealed class NotificationItem
     {
         public NotificationItem(NotificationKind kind, string message)
-            : this(Guid.NewGuid(), kind, message, DateTimeOffset.UtcNow)
+            : this(Guid.NewGuid(), kind, message, DateTimeOffset.UtcNow, string.Empty)
         {
         }
 
-        private NotificationItem(Guid id, NotificationKind kind, string message, DateTimeOffset createdAt)
+        private NotificationItem(Guid id, NotificationKind kind, string message, DateTimeOffset createdAt, string actionText)
         {
             Id = id;
             Kind = kind;
             Message = message ?? string.Empty;
             CreatedAt = createdAt;
+            ActionText = actionText ?? string.Empty;
         }
 
         public Guid Id { get; }
@@ -38,9 +39,18 @@ namespace TopToolbar.ViewModels
 
         public DateTimeOffset CreatedAt { get; }
 
+        public string ActionText { get; }
+
+        public bool HasAction => !string.IsNullOrWhiteSpace(ActionText);
+
         public NotificationItem WithMessage(NotificationKind kind, string message)
         {
-            return new NotificationItem(Id, kind, message, CreatedAt);
+            return new NotificationItem(Id, kind, message, CreatedAt, ActionText);
+        }
+
+        public NotificationItem WithActionText(string actionText)
+        {
+            return new NotificationItem(Id, Kind, Message, CreatedAt, actionText);
         }
     }
 }

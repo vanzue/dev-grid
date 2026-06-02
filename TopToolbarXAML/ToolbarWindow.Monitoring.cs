@@ -6,6 +6,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Timers;
 using Microsoft.UI.Windowing;
+using TopToolbar.Logging;
 using Timer = System.Timers.Timer;
 
 namespace TopToolbar
@@ -15,6 +16,7 @@ namespace TopToolbar
         private const int TriggerWindowHeight = 10;
         private const int TriggerWindowMinWidth = 320;
         private const int VkControl = 0x11;
+        private DateTime _lastMonitorLogUtc;
 
         private void StartMonitoring()
         {
@@ -50,38 +52,51 @@ namespace TopToolbar
             var ctrlGatePassed = !_requireCtrlForTopBarTrigger || IsCtrlPressed();
             var shouldShow = inTriggerWindow && ctrlGatePassed;
 
-            if (shouldShow && !_isVisible)
+            // All AppWindow access must happen on the UI thread.
+            DispatcherQueue.TryEnqueue(() =>
             {
-                DispatcherQueue.TryEnqueue(() => ShowToolbar());
-            }
-            else if (_isVisible)
-            {
-                // hide when cursor is not over the toolbar rectangle
-                DispatcherQueue.TryEnqueue(() =>
+                bool appVisible = this.AppWindow.IsVisible;
+                var winPos = this.AppWindow.Position;
+                var winSize = this.AppWindow.Size;
+
+                // The window is larger than the visible toolbar by ToolbarShadowPaddingValue (DIP)
+                // on every side. Inset the hit rectangle by that padding (converted to physical
+                // pixels) so the cursor is only treated as "over" the visible toolbar, not the
+                // surrounding transparent shadow margin.
+                double scale = ToolbarContainer?.XamlRoot?.RasterizationScale ?? 1.0;
+                int pad = (int)Math.Round(ToolbarMetrics.ToolbarShadowPaddingValue * scale);
+                int left = winPos.X + pad;
+                int top = winPos.Y + pad;
+                int right = winPos.X + winSize.Width - pad;
+                int bottom = winPos.Y + winSize.Height - pad;
+
+                bool overToolbar = pt.X >= left && pt.X <= right && pt.Y >= top && pt.Y <= bottom;
+
+                if ((DateTime.UtcNow - _lastMonitorLogUtc).TotalMilliseconds > 500)
                 {
-                    var winPos = this.AppWindow.Position;
-                    var winSize = this.AppWindow.Size;
+                    _lastMonitorLogUtc = DateTime.UtcNow;
+                    AppLogger.LogInfo($"AutoHideTick: cursor=({pt.X},{pt.Y}) _isVisible={_isVisible} appVisible={appVisible} radial={_isRadialVisible} shouldShow={shouldShow} overToolbar={overToolbar} inTrigger={inTriggerWindow} win=({winPos.X},{winPos.Y},{winSize.Width},{winSize.Height}) hit=({left},{top},{right},{bottom})");
+                }
 
-                    // The window is larger than the visible toolbar by ToolbarShadowPaddingValue
-                    // (DIP) on every side. Inset the hit rectangle by that padding (converted to
-                    // physical pixels) so the cursor is only treated as "over" the visible toolbar,
-                    // not the surrounding transparent shadow margin.
-                    double scale = ToolbarContainer?.XamlRoot?.RasterizationScale ?? 1.0;
-                    int pad = (int)Math.Round(ToolbarMetrics.ToolbarShadowPaddingValue * scale);
-                    int left = winPos.X + pad;
-                    int top = winPos.Y + pad;
-                    int right = winPos.X + winSize.Width - pad;
-                    int bottom = winPos.Y + winSize.Height - pad;
-
-                    bool overToolbar = pt.X >= left && pt.X <= right &&
-                                       pt.Y >= top && pt.Y <= bottom;
-                    bool overTriggerWindow = IsPointInRect(pt.X, pt.Y, triggerLeft, triggerTop, triggerRight, triggerBottom);
-                    if (!overToolbar && !overTriggerWindow)
+                if (shouldShow && !_isVisible)
+                {
+                    ShowToolbar();
+                }
+                else if (_isVisible)
+                {
+                    if (!overToolbar && !inTriggerWindow)
                     {
                         HideToolbar();
                     }
-                });
-            }
+                }
+                else if (!_isRadialVisible && appVisible)
+                {
+                    // Desync guard: the window is actually visible on screen, but our state flag
+                    // says it isn't (e.g. another path showed it without setting _isVisible).
+                    AppLogger.LogWarning($"AutoHide: DESYNC - appVisible=true but _isVisible=false. win=({winPos.X},{winPos.Y},{winSize.Width},{winSize.Height})");
+                    HideToolbar();
+                }
+            });
         }
 
         private void ShowToolbar()
@@ -93,8 +108,16 @@ namespace TopToolbar
             var da = DisplayArea.GetFromPoint(new Windows.Graphics.PointInt32(ptPx.X, ptPx.Y), DisplayAreaFallback.Primary);
             var work = da.WorkArea;
             var size = AppWindow.Size;
+
+            // The window is larger than the visible toolbar by ToolbarShadowPaddingValue (DIP) on
+            // every side. Offset up by that padding so the *visible* toolbar's top edge is flush
+            // with the screen top, aligning it with the show-trigger band. Without this there is a
+            // transparent gap above the visible toolbar that sits inside the trigger band, so a
+            // cursor resting at the very top edge keeps the toolbar shown and it never auto-hides.
+            double scale = ToolbarContainer?.XamlRoot?.RasterizationScale ?? 1.0;
+            int pad = (int)Math.Round(ToolbarMetrics.ToolbarShadowPaddingValue * scale);
             int x = work.X + ((work.Width - size.Width) / 2);
-            int y = work.Y; // flush with top
+            int y = work.Y - pad; // visible toolbar flush with top edge
             AppWindow.Move(new Windows.Graphics.PointInt32(x, y));
             AppWindow.Show(false); // show without activation
             MakeTopMost();

@@ -23,17 +23,20 @@ namespace TopToolbar.Services
         private readonly ActionContextFactory _contextFactory;
         private readonly DispatcherQueue _dispatcher;
         private readonly INotificationService _notificationService;
+        private readonly Func<ToolbarButton, ToolbarAction, string, CancellationToken, Task> _workspaceFailureHandler;
 
         public ToolbarActionExecutor(
             ActionProviderService providerService,
             ActionContextFactory contextFactory,
             DispatcherQueue dispatcher = null,
-            INotificationService notificationService = null)
+            INotificationService notificationService = null,
+            Func<ToolbarButton, ToolbarAction, string, CancellationToken, Task> workspaceFailureHandler = null)
         {
             _providerService = providerService ?? throw new ArgumentNullException(nameof(providerService));
             _contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
             _dispatcher = dispatcher;
             _notificationService = notificationService;
+            _workspaceFailureHandler = workspaceFailureHandler;
         }
 
         public Task ExecuteAsync(ButtonGroup group, ToolbarButton button, CancellationToken cancellationToken = default)
@@ -134,7 +137,16 @@ namespace TopToolbar.Services
 
                     if (!result.Ok)
                     {
-                        _notificationService?.ShowError(BuildFailureMessage(button, message));
+                        var failureMessage = BuildFailureMessage(button, message);
+                        var workspaceFailureHandler = _workspaceFailureHandler;
+                        if (ShouldOfferWorkspaceRemoval(action) && workspaceFailureHandler != null)
+                        {
+                            await workspaceFailureHandler(button, action, message, cancellationToken).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            _notificationService?.ShowError(failureMessage);
+                        }
                     }
                     else if (ShouldShowWorkspaceSuccess(action))
                     {
@@ -160,7 +172,15 @@ namespace TopToolbar.Services
                 {
                     button.StatusMessage = message;
                 });
-                _notificationService?.ShowError(BuildFailureMessage(button, message));
+                var workspaceFailureHandler = _workspaceFailureHandler;
+                if (ShouldOfferWorkspaceRemoval(action) && workspaceFailureHandler != null)
+                {
+                    await workspaceFailureHandler(button, action, message, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    _notificationService?.ShowError(BuildFailureMessage(button, message));
+                }
                 AppLogger.LogError($"ToolbarActionExecutor: provider invocation threw an exception. - {ex.Message}");
             }
             finally
@@ -188,6 +208,11 @@ namespace TopToolbar.Services
 
             return !string.IsNullOrWhiteSpace(action.ProviderActionId)
                 && action.ProviderActionId.StartsWith("workspace.launch:", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool ShouldOfferWorkspaceRemoval(ToolbarAction action)
+        {
+            return ShouldShowWorkspaceSuccess(action);
         }
 
         private void RunOnUi(Action action)
