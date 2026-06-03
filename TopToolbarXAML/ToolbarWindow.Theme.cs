@@ -18,6 +18,8 @@ namespace TopToolbar
         private bool _hasAccentPair;
         private Color _accentA;
         private Color _accentB;
+        private ThemeTokens _currentThemeTokens;
+        private Color _currentThemeIconColor;
 
         private void ApplyTheme(ToolbarTheme theme)
         {
@@ -31,6 +33,8 @@ namespace TopToolbar
             EnsureInteractiveContrast(tokens);
             EnsureAccentPair(theme, tokens);
             var iconColor = GetNeutralIconColor(tokens);
+            _currentThemeTokens = tokens;
+            _currentThemeIconColor = iconColor;
 
             var glowStart = BlendRgb(tokens.BackgroundInner, _accentA, tokens.RandomInnerBlend);
             var glowMid = BlendRgb(tokens.BackgroundMiddle, _accentA, tokens.RandomMiddleBlend);
@@ -78,6 +82,7 @@ namespace TopToolbar
 
             ApplyThemeToLiveToolbarElements(tokens, iconColor);
             SyncToastWindowTheme();
+            RefreshRadialThemeVisuals();
         }
 
         private void EnsureAccentPair(ToolbarTheme theme, ThemeTokens tokens)

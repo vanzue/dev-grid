@@ -28,13 +28,6 @@ namespace TopToolbar
         private const uint ModNoRepeat = 0x4000;
         private const uint VkSpace = 0x20;
 
-        private static readonly SolidColorBrush RadialBackgroundBrush = new(Color.FromArgb(230, 28, 28, 32));
-        private static readonly SolidColorBrush RadialBorderBrush = new(Color.FromArgb(130, 255, 255, 255));
-        private static readonly SolidColorBrush RadialRingBrush = new(Color.FromArgb(60, 255, 255, 255));
-        private static readonly SolidColorBrush RadialCenterBrush = new(Color.FromArgb(235, 20, 20, 22));
-        private static readonly SolidColorBrush RadialCenterTextBrush = new(Color.FromArgb(230, 230, 230, 230));
-        private static readonly SolidColorBrush RadialIconBrush = new(Color.FromArgb(255, 255, 255, 255));
-
         private ToolbarDisplayMode _currentDisplayMode = ToolbarDisplayMode.TopBar;
         private bool _radialHotKeyRegistered;
         private bool _isRadialVisible;
@@ -57,9 +50,66 @@ namespace TopToolbar
 
             public string Label { get; init; } = string.Empty;
 
+            public string Title { get; init; } = string.Empty;
+
+            public string Category { get; init; } = string.Empty;
+
             public ToolbarButtonItem Item { get; init; }
 
             public ToolbarButton IconButton { get; init; }
+        }
+
+        private sealed class RadialVisualPalette
+        {
+            public required Brush HaloBrush { get; init; }
+
+            public required Brush RingSurfaceBrush { get; init; }
+
+            public required Brush RingOverlayBrush { get; init; }
+
+            public required Brush RingStrokeBrush { get; init; }
+
+            public required Brush OrbitStrokeBrush { get; init; }
+
+            public required Brush OrbitFillBrush { get; init; }
+
+            public required Brush CoreSurfaceBrush { get; init; }
+
+            public required Brush CoreStrokeBrush { get; init; }
+
+            public required Brush CoreAccentBrush { get; init; }
+
+            public required Brush ButtonSurfaceBrush { get; init; }
+
+            public required Brush ButtonHoverBrush { get; init; }
+
+            public required Brush ButtonPressedBrush { get; init; }
+
+            public required Brush ButtonStrokeBrush { get; init; }
+
+            public required Brush ButtonGlowBrush { get; init; }
+
+            public required Brush ButtonIconHostBrush { get; init; }
+
+            public required Brush ButtonLabelBrush { get; init; }
+
+            public required Brush ButtonLabelPlateBrush { get; init; }
+
+            public required Brush ButtonCategoryBrush { get; init; }
+
+            public required Brush IconBrush { get; init; }
+
+            public required Brush CenterTextBrush { get; init; }
+
+            public required Brush AccentChipBrush { get; init; }
+
+            public required Brush AccentSmearBrush { get; init; }
+
+            public required Color AccentAColor { get; init; }
+
+            public required Color NotificationAccentColor { get; init; }
+
+            public required FontFamily TextFontFamily { get; init; }
         }
 
         private void ApplyDisplayMode(ToolbarDisplayMode mode)
@@ -357,6 +407,8 @@ namespace TopToolbar
             {
                 Kind = RadialEntryKind.Snapshot,
                 Label = "Snapshot",
+                Title = "Snapshot",
+                Category = "Workspace",
                 IconButton = new ToolbarButton
                 {
                     Name = "Snapshot",
@@ -369,6 +421,8 @@ namespace TopToolbar
             {
                 Kind = RadialEntryKind.Settings,
                 Label = "Settings",
+                Title = "Settings",
+                Category = "System",
                 IconButton = new ToolbarButton
                 {
                     Name = "Settings",
@@ -438,55 +492,164 @@ namespace TopToolbar
                 {
                     Kind = RadialEntryKind.ToolbarButton,
                     Label = $"{labelPrefix}: {button.Button.DisplayName}",
+                    Title = button.Button.DisplayName ?? button.Button.Name ?? "Action",
+                    Category = labelPrefix,
                     Item = button,
                     IconButton = button.Button,
                 });
             }
         }
 
+        private void RefreshRadialThemeVisuals()
+        {
+            if (!_isRadialVisible || RadialCanvas == null || RadialCanvas.Visibility != Visibility.Visible)
+            {
+                return;
+            }
+
+            var entries = BuildRadialEntries();
+            if (entries.Count == 0)
+            {
+                return;
+            }
+
+            BuildRadialVisualTree(entries, out _);
+        }
+
         private void BuildRadialVisualTree(IReadOnlyList<RadialEntry> entries, out double diameterDip)
         {
-            const double itemSize = 62;
-            const double minRingRadius = 114;
-            const double ringSpacing = 78;
-            const double ringPadding = 56;
+            const double itemSize = 76;
+            const double minRingRadius = 118;
+            const double ringSpacing = 88;
+            const double ringPadding = 84;
 
+            var palette = CreateRadialPalette();
             var rings = CreateRings(entries.Count, minRingRadius, itemSize, ringSpacing);
             var outerRadius = rings.Count == 0 ? minRingRadius : rings[rings.Count - 1].radius;
-            var center = outerRadius + (itemSize / 2d) + 22;
+            var center = outerRadius + (itemSize / 2d) + 34;
             diameterDip = Math.Ceiling((center * 2d) + ringPadding);
 
             RadialCanvas.Width = diameterDip;
             RadialCanvas.Height = diameterDip;
             RadialCanvas.Children.Clear();
 
-            var outerRingDiameter = (outerRadius * 2d) + itemSize;
-            var ring = new Ellipse
+            var ambientDiameter = (outerRadius * 2d) + itemSize + 132;
+            var ambientHalo = new Ellipse
             {
-                Width = outerRingDiameter,
-                Height = outerRingDiameter,
-                Fill = new SolidColorBrush(Color.FromArgb(38, 255, 255, 255)),
-                Stroke = RadialRingBrush,
-                StrokeThickness = 1,
+                Width = ambientDiameter,
+                Height = ambientDiameter,
+                Fill = palette.HaloBrush,
+                IsHitTestVisible = false,
             };
-            Canvas.SetLeft(ring, center - (outerRingDiameter / 2d));
-            Canvas.SetTop(ring, center - (outerRingDiameter / 2d));
-            RadialCanvas.Children.Add(ring);
+            Canvas.SetLeft(ambientHalo, center - (ambientDiameter / 2d));
+            Canvas.SetTop(ambientHalo, center - (ambientDiameter / 2d));
+            RadialCanvas.Children.Add(ambientHalo);
 
-            var centerNode = BuildCenterNode();
+            var ringSurfaceDiameter = (outerRadius * 2d) + itemSize + 52;
+            var ringSurface = new Ellipse
+            {
+                Width = ringSurfaceDiameter,
+                Height = ringSurfaceDiameter,
+                Fill = palette.RingSurfaceBrush,
+                Stroke = palette.RingStrokeBrush,
+                StrokeThickness = 1.2,
+                IsHitTestVisible = false,
+            };
+            Canvas.SetLeft(ringSurface, center - (ringSurfaceDiameter / 2d));
+            Canvas.SetTop(ringSurface, center - (ringSurfaceDiameter / 2d));
+            RadialCanvas.Children.Add(ringSurface);
+
+            var ringOverlayDiameter = (outerRadius * 2d) + itemSize + 16;
+            var ringOverlay = new Ellipse
+            {
+                Width = ringOverlayDiameter,
+                Height = ringOverlayDiameter,
+                Fill = palette.RingOverlayBrush,
+                Stroke = palette.RingStrokeBrush,
+                StrokeThickness = 0.8,
+                IsHitTestVisible = false,
+            };
+            Canvas.SetLeft(ringOverlay, center - (ringOverlayDiameter / 2d));
+            Canvas.SetTop(ringOverlay, center - (ringOverlayDiameter / 2d));
+            RadialCanvas.Children.Add(ringOverlay);
+
+            var smearA = new Rectangle
+            {
+                Width = ringOverlayDiameter * 0.42,
+                Height = 30,
+                RadiusX = 13,
+                RadiusY = 13,
+                Fill = palette.AccentSmearBrush,
+                Opacity = 0.52,
+                IsHitTestVisible = false,
+                RenderTransform = new RotateTransform { Angle = -24 },
+            };
+            Canvas.SetLeft(smearA, center + (outerRadius * 0.06));
+            Canvas.SetTop(smearA, center - outerRadius - 8);
+            RadialCanvas.Children.Add(smearA);
+
+            var smearB = new Rectangle
+            {
+                Width = ringOverlayDiameter * 0.30,
+                Height = 20,
+                RadiusX = 9,
+                RadiusY = 9,
+                Fill = palette.AccentSmearBrush,
+                Opacity = 0.34,
+                IsHitTestVisible = false,
+                RenderTransform = new RotateTransform { Angle = 32 },
+            };
+            Canvas.SetLeft(smearB, center - outerRadius - 18);
+            Canvas.SetTop(smearB, center + (outerRadius * 0.34));
+            RadialCanvas.Children.Add(smearB);
+
+            var smearC = new Ellipse
+            {
+                Width = 108,
+                Height = 62,
+                Fill = palette.AccentSmearBrush,
+                Opacity = 0.26,
+                IsHitTestVisible = false,
+            };
+            Canvas.SetLeft(smearC, center + (outerRadius * 0.54));
+            Canvas.SetTop(smearC, center + (outerRadius * 0.18));
+            RadialCanvas.Children.Add(smearC);
+
+            for (var ringIndex = 0; ringIndex < rings.Count; ringIndex++)
+            {
+                var ringDiameter = (rings[ringIndex].radius * 2d) + itemSize + 2;
+                var orbitGuide = new Ellipse
+                {
+                    Width = ringDiameter,
+                    Height = ringDiameter,
+                    Fill = palette.OrbitFillBrush,
+                    Stroke = palette.OrbitStrokeBrush,
+                    StrokeThickness = ringIndex == rings.Count - 1 ? 1.1 : 0.9,
+                    IsHitTestVisible = false,
+                };
+                Canvas.SetLeft(orbitGuide, center - (ringDiameter / 2d));
+                Canvas.SetTop(orbitGuide, center - (ringDiameter / 2d));
+                RadialCanvas.Children.Add(orbitGuide);
+            }
+
+            var centerNode = BuildCenterNode(palette);
             Canvas.SetLeft(centerNode, center - (centerNode.Width / 2d));
             Canvas.SetTop(centerNode, center - (centerNode.Height / 2d));
             RadialCanvas.Children.Add(centerNode);
 
             var index = 0;
-            foreach (var (radius, count) in rings)
+            for (var ringIndex = 0; ringIndex < rings.Count; ringIndex++)
             {
+                var radius = rings[ringIndex].radius;
+                var count = rings[ringIndex].count;
+                var ringOffset = ringIndex % 2 == 0 ? 0d : Math.PI / count;
+
                 for (var i = 0; i < count && index < entries.Count; i++, index++)
                 {
-                    var angle = (-Math.PI / 2d) + ((2d * Math.PI * i) / count);
+                    var angle = (-Math.PI / 2d) + ((2d * Math.PI * i) / count) + ringOffset;
                     var x = center + (Math.Cos(angle) * radius) - (itemSize / 2d);
                     var y = center + (Math.Sin(angle) * radius) - (itemSize / 2d);
-                    var button = BuildRadialButton(entries[index], itemSize);
+                    var button = BuildRadialButton(entries[index], itemSize, palette);
                     Canvas.SetLeft(button, x);
                     Canvas.SetTop(button, y);
                     RadialCanvas.Children.Add(button);
@@ -507,7 +670,7 @@ namespace TopToolbar
             while (remaining > 0)
             {
                 var circumference = 2d * Math.PI * radius;
-                var capacity = Math.Max(6, (int)Math.Floor(circumference / (itemSize + 12)));
+                var capacity = Math.Max(6, (int)Math.Floor(circumference / (itemSize + 20)));
                 var count = Math.Min(remaining, capacity);
                 rings.Add((radius, count));
                 remaining -= count;
@@ -517,72 +680,460 @@ namespace TopToolbar
             return rings;
         }
 
-        private FrameworkElement BuildCenterNode()
+        private FrameworkElement BuildCenterNode(RadialVisualPalette palette)
         {
-            var border = new Border
+            const double size = 116;
+            var host = new Grid
             {
-                Width = 98,
-                Height = 98,
-                CornerRadius = new CornerRadius(49),
-                Background = RadialCenterBrush,
-                BorderBrush = RadialBorderBrush,
-                BorderThickness = new Thickness(1),
+                Width = size,
+                Height = size,
+                IsHitTestVisible = false,
             };
 
-            var stack = new StackPanel
+            host.Children.Add(new Border
+            {
+                Width = size,
+                Height = size,
+                CornerRadius = new CornerRadius(size / 2d),
+                Background = palette.CoreSurfaceBrush,
+                BorderBrush = palette.CoreStrokeBrush,
+                BorderThickness = new Thickness(1.2),
+                Shadow = new ThemeShadow(),
+            });
+
+            host.Children.Add(new Ellipse
+            {
+                Width = 96,
+                Height = 96,
+                Stroke = palette.CoreAccentBrush,
+                StrokeThickness = 1.1,
+                Opacity = 0.9,
+                IsHitTestVisible = false,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+
+            host.Children.Add(new Border
+            {
+                Width = 80,
+                Height = 80,
+                CornerRadius = new CornerRadius(40),
+                Background = palette.RingOverlayBrush,
+                BorderBrush = palette.CoreAccentBrush,
+                BorderThickness = new Thickness(0.8),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+
+            var content = new StackPanel
             {
                 Spacing = 4,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            stack.Children.Add(new FontIcon
+            content.Children.Add(new FontIcon
             {
-                Glyph = "\uE70F",
+                Glyph = "\uE8B7",
                 FontFamily = new FontFamily("Segoe MDL2 Assets"),
-                FontSize = 20,
-                Foreground = RadialIconBrush,
+                FontSize = 16,
+                Foreground = palette.IconBrush,
                 HorizontalAlignment = HorizontalAlignment.Center,
             });
-            stack.Children.Add(new TextBlock
+            content.Children.Add(new TextBlock
             {
-                Text = "Esc",
+                Text = "Dev Grid",
                 FontSize = 12,
-                Foreground = RadialCenterTextBrush,
+                FontFamily = palette.TextFontFamily,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = palette.CenterTextBrush,
                 HorizontalAlignment = HorizontalAlignment.Center,
             });
-            border.Child = stack;
-            return border;
+            content.Children.Add(new TextBlock
+            {
+                Text = "Esc to close",
+                FontSize = 10,
+                FontFamily = palette.TextFontFamily,
+                Foreground = palette.CenterTextBrush,
+                Opacity = 0.72,
+                HorizontalAlignment = HorizontalAlignment.Center,
+            });
+            host.Children.Add(content);
+            return host;
         }
 
-        private Button BuildRadialButton(RadialEntry entry, double itemSize)
+        private Button BuildRadialButton(RadialEntry entry, double itemSize, RadialVisualPalette palette)
         {
             var button = new Button
             {
                 Width = itemSize,
                 Height = itemSize,
-                CornerRadius = new CornerRadius(itemSize / 2d),
                 Padding = new Thickness(0),
-                BorderThickness = new Thickness(1),
-                Background = RadialBackgroundBrush,
-                BorderBrush = RadialBorderBrush,
+                BorderThickness = new Thickness(0),
+                Background = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0)),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                VerticalContentAlignment = VerticalAlignment.Stretch,
+                UseSystemFocusVisuals = false,
                 Tag = entry,
             };
 
+            button.Resources["ButtonBackground"] = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0));
+            button.Resources["ButtonBackgroundPointerOver"] = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0));
+            button.Resources["ButtonBackgroundPressed"] = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0));
+            button.Resources["ButtonBackgroundDisabled"] = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0));
+
             ToolTipService.SetToolTip(button, entry.Label);
 
-            var icon = new ToolbarIconPresenter
+            var accentColor = entry.Kind switch
             {
-                Button = entry.IconButton,
-                IconSize = 28,
-                Foreground = Color.FromArgb(255, 255, 255, 255),
+                RadialEntryKind.Settings => palette.NotificationAccentColor,
+                _ => palette.AccentAColor,
+            };
+
+            var glowBrush = new RadialGradientBrush
+            {
+                Center = new Windows.Foundation.Point(0.5, 0.5),
+                GradientOrigin = new Windows.Foundation.Point(0.5, 0.5),
+                RadiusX = 0.62,
+                RadiusY = 0.62,
+            };
+            glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(accentColor, 0x34), Offset = 0.0 });
+            glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(accentColor, 0x16), Offset = 0.52 });
+            glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(accentColor, 0x00), Offset = 1.0 });
+
+            var chipBrush = new SolidColorBrush(WithAlpha(accentColor, 0xD8));
+
+            var root = new Grid
+            {
+                Width = itemSize,
+                Height = itemSize,
+                RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5),
+            };
+
+            var scale = new ScaleTransform
+            {
+                ScaleX = 1,
+                ScaleY = 1,
+            };
+            root.RenderTransform = scale;
+
+            var glow = new Border
+            {
+                CornerRadius = new CornerRadius(30),
+                Background = glowBrush,
+                Opacity = 0.0,
+                Margin = new Thickness(4),
+                IsHitTestVisible = false,
+            };
+            root.Children.Add(glow);
+
+            var scratch = new Rectangle
+            {
+                Width = itemSize * 0.78,
+                Height = 14,
+                RadiusX = 6,
+                RadiusY = 6,
+                Fill = palette.AccentSmearBrush,
+                Opacity = 0.46,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 2, -14, 0),
+                IsHitTestVisible = false,
+                RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5),
+                RenderTransform = new RotateTransform { Angle = -19 },
+            };
+            root.Children.Add(scratch);
+
+            var scratchEcho = new Rectangle
+            {
+                Width = itemSize * 0.50,
+                Height = 10,
+                RadiusX = 4,
+                RadiusY = 4,
+                Fill = palette.AccentSmearBrush,
+                Opacity = 0.24,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(-12, 0, 0, 10),
+                IsHitTestVisible = false,
+                RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5),
+                RenderTransform = new RotateTransform { Angle = 31 },
+            };
+            root.Children.Add(scratchEcho);
+
+            var card = new Border
+            {
+                CornerRadius = new CornerRadius(28),
+                Background = palette.ButtonSurfaceBrush,
+                BorderBrush = palette.ButtonStrokeBrush,
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(10, 9, 10, 9),
+                Shadow = new ThemeShadow(),
+            };
+
+            var content = new Grid();
+            content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            var accentChip = new Border
+            {
+                Width = 24,
+                Height = 5,
+                CornerRadius = new CornerRadius(2.5),
+                Background = chipBrush,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 7),
+            };
+            Grid.SetRow(accentChip, 0);
+            content.Children.Add(accentChip);
+
+            var body = new Grid
+            {
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            button.Content = icon;
+
+            var iconHost = new Border
+            {
+                Width = 36,
+                Height = 36,
+                CornerRadius = new CornerRadius(18),
+                Background = palette.ButtonIconHostBrush,
+                BorderBrush = chipBrush,
+                BorderThickness = new Thickness(0.8),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            iconHost.Child = new ToolbarIconPresenter
+            {
+                Button = entry.IconButton,
+                IconSize = 20,
+                Foreground = _currentThemeIconColor,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            body.Children.Add(iconHost);
+            Grid.SetRow(body, 1);
+            content.Children.Add(body);
+
+            card.Child = content;
+            root.Children.Add(card);
+
+            var hoverLabelText = new TextBlock
+            {
+                Text = entry.Title,
+                FontSize = 11.5,
+                FontFamily = palette.TextFontFamily,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = palette.ButtonLabelBrush,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                TextAlignment = TextAlignment.Center,
+                TextWrapping = TextWrapping.NoWrap,
+                MaxLines = 1,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            };
+            var hoverLabel = new Border
+            {
+                Background = palette.ButtonLabelPlateBrush,
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(10, 5, 10, 5),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0, 0, 0, -28),
+                MaxWidth = Math.Max(92, itemSize + 26),
+                Opacity = 0.0,
+                IsHitTestVisible = false,
+                Child = hoverLabelText,
+            };
+            root.Children.Add(hoverLabel);
+
+            button.PointerEntered += (_, _) =>
+            {
+                scale.ScaleX = 1.06;
+                scale.ScaleY = 1.06;
+                card.Background = palette.ButtonHoverBrush;
+                card.BorderBrush = chipBrush;
+                glow.Opacity = 1.0;
+                scratch.Opacity = 0.62;
+                scratchEcho.Opacity = 0.36;
+                hoverLabel.Opacity = 1.0;
+            };
+
+            button.PointerExited += (_, _) =>
+            {
+                scale.ScaleX = 1;
+                scale.ScaleY = 1;
+                card.Background = palette.ButtonSurfaceBrush;
+                card.BorderBrush = palette.ButtonStrokeBrush;
+                glow.Opacity = 0.0;
+                scratch.Opacity = 0.46;
+                scratchEcho.Opacity = 0.24;
+                hoverLabel.Opacity = 0.0;
+            };
+
+            button.PointerPressed += (_, _) =>
+            {
+                scale.ScaleX = 0.98;
+                scale.ScaleY = 0.98;
+                card.Background = palette.ButtonPressedBrush;
+                glow.Opacity = 0.72;
+                scratch.Opacity = 0.76;
+                scratchEcho.Opacity = 0.44;
+                hoverLabel.Opacity = 1.0;
+            };
+
+            button.PointerReleased += (_, _) =>
+            {
+                scale.ScaleX = 1.06;
+                scale.ScaleY = 1.06;
+                card.Background = palette.ButtonHoverBrush;
+                glow.Opacity = 1.0;
+                scratch.Opacity = 0.62;
+                scratchEcho.Opacity = 0.36;
+                hoverLabel.Opacity = 1.0;
+            };
+
+            button.Content = root;
             button.Click += OnRadialButtonClick;
             return button;
+        }
+
+        private RadialVisualPalette CreateRadialPalette()
+        {
+            var theme = _vm?.Theme ?? ToolbarTheme.WarmFrosted;
+            var tokens = _currentThemeTokens;
+            if (tokens == null)
+            {
+                tokens = GetThemeTokens(theme);
+                ApplySaturationProfile(theme, tokens);
+                EnsureInteractiveContrast(tokens);
+                _currentThemeTokens = tokens;
+                _currentThemeIconColor = GetNeutralIconColor(tokens);
+            }
+
+            EnsureAccentPair(theme, tokens);
+
+            var blendedAccent = BlendRgb(_accentA, _accentB, 0.5);
+            var innerSurface = BlendRgb(tokens.BackgroundInner, Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), 0.10);
+            var buttonSurface = BlendRgb(tokens.BackgroundInner, tokens.BackgroundMiddle, 0.30);
+            var buttonHover = BlendRgb(tokens.ButtonHover, tokens.BackgroundInner, 0.22);
+            var buttonPressed = BlendRgb(tokens.ButtonPressed, tokens.BackgroundOuter, 0.16);
+            var orbitStroke = BlendRgb(tokens.Separator, blendedAccent, 0.32);
+
+            var haloBrush = new RadialGradientBrush
+            {
+                Center = new Windows.Foundation.Point(0.5, 0.5),
+                GradientOrigin = new Windows.Foundation.Point(0.5, 0.5),
+                RadiusX = 0.5,
+                RadiusY = 0.5,
+            };
+            haloBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accentA, 0x18), Offset = 0.0 });
+            haloBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accentA, 0x22), Offset = 0.28 });
+            haloBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accentA, 0x14), Offset = 0.56 });
+            haloBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(tokens.BackgroundOuter, 0x00), Offset = 1.0 });
+
+            var ringSurfaceBrush = new RadialGradientBrush
+            {
+                Center = new Windows.Foundation.Point(0.5, 0.46),
+                GradientOrigin = new Windows.Foundation.Point(0.5, 0.30),
+                RadiusX = 0.68,
+                RadiusY = 0.68,
+            };
+            ringSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(innerSurface, 0xF0), Offset = 0.0 });
+            ringSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(BlendRgb(tokens.BackgroundMiddle, _accentA, 0.08), 0xDD), Offset = 0.48 });
+            ringSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(tokens.BackgroundOuter, 0xCE), Offset = 1.0 });
+
+            var ringOverlayBrush = new RadialGradientBrush
+            {
+                Center = new Windows.Foundation.Point(0.5, 0.38),
+                GradientOrigin = new Windows.Foundation.Point(0.5, 0.26),
+                RadiusX = 0.74,
+                RadiusY = 0.74,
+            };
+            ringOverlayBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), 0x24), Offset = 0.0 });
+            ringOverlayBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accentA, 0x16), Offset = 0.34 });
+            ringOverlayBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(tokens.BackgroundOuter, 0x14), Offset = 1.0 });
+
+            var coreSurfaceBrush = new RadialGradientBrush
+            {
+                Center = new Windows.Foundation.Point(0.5, 0.34),
+                GradientOrigin = new Windows.Foundation.Point(0.5, 0.18),
+                RadiusX = 0.74,
+                RadiusY = 0.74,
+            };
+            coreSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(BlendRgb(tokens.BackgroundInner, _accentA, 0.10), 0xF2), Offset = 0.0 });
+            coreSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(BlendRgb(tokens.BackgroundMiddle, _accentB, 0.12), 0xE4), Offset = 0.48 });
+            coreSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(BlendRgb(tokens.BackgroundOuter, blendedAccent, 0.12), 0xD8), Offset = 1.0 });
+
+            var buttonSurfaceBrush = new LinearGradientBrush
+            {
+                StartPoint = new Windows.Foundation.Point(0.15, 0.0),
+                EndPoint = new Windows.Foundation.Point(0.85, 1.0),
+            };
+            buttonSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(BlendRgb(buttonSurface, Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), 0.10), 0xF2), Offset = 0.0 });
+            buttonSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(buttonSurface, 0xEC), Offset = 1.0 });
+
+            var buttonHoverBrush = new LinearGradientBrush
+            {
+                StartPoint = new Windows.Foundation.Point(0.1, 0.0),
+                EndPoint = new Windows.Foundation.Point(0.9, 1.0),
+            };
+            buttonHoverBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(BlendRgb(buttonHover, Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), 0.12), 0xF8), Offset = 0.0 });
+            buttonHoverBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(BlendRgb(buttonHover, _accentA, 0.06), 0xF1), Offset = 1.0 });
+
+            var buttonPressedBrush = new LinearGradientBrush
+            {
+                StartPoint = new Windows.Foundation.Point(0.25, 0.0),
+                EndPoint = new Windows.Foundation.Point(0.75, 1.0),
+            };
+            buttonPressedBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(buttonPressed, 0xF4), Offset = 0.0 });
+            buttonPressedBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(BlendRgb(buttonPressed, tokens.BackgroundOuter, 0.18), 0xED), Offset = 1.0 });
+
+            var accentSmearBrush = new LinearGradientBrush
+            {
+                StartPoint = new Windows.Foundation.Point(0.0, 0.5),
+                EndPoint = new Windows.Foundation.Point(1.0, 0.5),
+            };
+            accentSmearBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accentA, 0x00), Offset = 0.0 });
+            accentSmearBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accentA, 0xC8), Offset = 0.30 });
+            accentSmearBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(tokens.NotificationAccent, 0x7A), Offset = 0.68 });
+            accentSmearBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(tokens.NotificationAccent, 0x00), Offset = 1.0 });
+
+            return new RadialVisualPalette
+            {
+                HaloBrush = haloBrush,
+                RingSurfaceBrush = ringSurfaceBrush,
+                RingOverlayBrush = ringOverlayBrush,
+                RingStrokeBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.Border, _accentA, 0.08), 0xAE)),
+                OrbitStrokeBrush = new SolidColorBrush(WithAlpha(BlendRgb(orbitStroke, blendedAccent, 0.28), 0x88)),
+                OrbitFillBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.BackgroundMiddle, _accentA, 0.16), 0x14)),
+                CoreSurfaceBrush = coreSurfaceBrush,
+                CoreStrokeBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.Border, _accentA, 0.20), 0xC8)),
+                CoreAccentBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.HighlightA, _accentB, 0.36), 0x96)),
+                ButtonSurfaceBrush = buttonSurfaceBrush,
+                ButtonHoverBrush = buttonHoverBrush,
+                ButtonPressedBrush = buttonPressedBrush,
+                ButtonStrokeBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.Border, tokens.Label, 0.06), 0xB6)),
+                ButtonGlowBrush = new SolidColorBrush(WithAlpha(_accentA, 0x22)),
+                ButtonIconHostBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.BackgroundOuter, tokens.BackgroundInner, 0.18), 0x68)),
+                ButtonLabelBrush = new SolidColorBrush(WithAlpha(tokens.Label, 0xFA)),
+                ButtonLabelPlateBrush = new SolidColorBrush(WithAlpha(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), 0xDC)),
+                ButtonCategoryBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.Label, _accentB, 0.22), 0xC6)),
+                IconBrush = new SolidColorBrush(_currentThemeIconColor),
+                CenterTextBrush = new SolidColorBrush(WithAlpha(tokens.Label, 0xEA)),
+                AccentChipBrush = new SolidColorBrush(WithAlpha(_accentA, 0xC8)),
+                AccentSmearBrush = accentSmearBrush,
+                AccentAColor = _accentA,
+                NotificationAccentColor = tokens.NotificationAccent,
+                TextFontFamily = new FontFamily(tokens.FontFamily),
+            };
+        }
+
+        private static Color WithAlpha(Color color, byte alpha)
+        {
+            return Color.FromArgb(alpha, color.R, color.G, color.B);
         }
 
         private async void OnRadialButtonClick(object sender, RoutedEventArgs e)
