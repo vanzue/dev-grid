@@ -455,8 +455,25 @@ namespace TopToolbar
             }
 
             _isRadialVisible = false;
+            _lastEscapeDown = false;
+            _lastMouseDown = false;
             RadialCanvas.Visibility = Visibility.Collapsed;
-            AppWindow.Hide();
+            ParkRadialHostWindow();
+        }
+
+        private void ParkRadialHostWindow()
+        {
+            if (_currentDisplayMode != ToolbarDisplayMode.RadialMenu)
+            {
+                AppWindow.Hide();
+                return;
+            }
+
+            var displayArea = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
+            var workArea = displayArea?.WorkArea ?? new Windows.Graphics.RectInt32(0, 0, 1, 1);
+            AppWindow.Resize(new Windows.Graphics.SizeInt32(1, 1));
+            AppWindow.Move(new Windows.Graphics.PointInt32(workArea.X - 2, workArea.Y - 2));
+            AppWindow.Show(false);
         }
 
         private List<RadialEntry> BuildRadialEntries()
