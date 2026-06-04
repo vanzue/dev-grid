@@ -650,8 +650,6 @@ namespace TopToolbar
                 Width = ringSurfaceDiameter,
                 Height = ringSurfaceDiameter,
                 Fill = palette.RingSurfaceBrush,
-                Stroke = palette.RingStrokeBrush,
-                StrokeThickness = 1.2,
                 IsHitTestVisible = false,
             };
             Canvas.SetLeft(ringSurface, center - (ringSurfaceDiameter / 2d));
@@ -831,7 +829,7 @@ namespace TopToolbar
 
         private FrameworkElement BuildCenterNode(RadialVisualPalette palette)
         {
-            const double size = 116;
+            const double size = 96;
             var host = new Grid
             {
                 Width = size,
@@ -839,74 +837,61 @@ namespace TopToolbar
                 IsHitTestVisible = false,
             };
 
-            host.Children.Add(new Border
+            var coreAuraBrush = new RadialGradientBrush
             {
-                Width = size,
-                Height = size,
-                CornerRadius = new CornerRadius(size / 2d),
-                Background = palette.CoreSurfaceBrush,
-                BorderBrush = palette.CoreStrokeBrush,
-                BorderThickness = new Thickness(1.2),
-                Shadow = new ThemeShadow(),
-            });
+                Center = new Windows.Foundation.Point(0.5, 0.5),
+                GradientOrigin = new Windows.Foundation.Point(0.45, 0.42),
+                RadiusX = 0.55,
+                RadiusY = 0.55,
+            };
+            coreAuraBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(palette.ButtonAccentColors[0], 0x58), Offset = 0.0 });
+            coreAuraBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(palette.ButtonAccentColors[2], 0x28), Offset = 0.56 });
+            coreAuraBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(palette.ButtonAccentColors[0], 0x00), Offset = 1.0 });
 
             host.Children.Add(new Ellipse
             {
-                Width = 96,
-                Height = 96,
-                Stroke = palette.CoreAccentBrush,
-                StrokeThickness = 1.1,
-                Opacity = 0.9,
+                Width = size,
+                Height = size,
+                Fill = coreAuraBrush,
+                Opacity = 0.75,
                 IsHitTestVisible = false,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             });
 
-            host.Children.Add(new Border
+            var coreBrush = new LinearGradientBrush
             {
-                Width = 80,
-                Height = 80,
-                CornerRadius = new CornerRadius(40),
-                Background = palette.RingOverlayBrush,
-                BorderBrush = palette.CoreAccentBrush,
-                BorderThickness = new Thickness(0.8),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            });
-
-            var content = new StackPanel
-            {
-                Spacing = 4,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
+                StartPoint = new Windows.Foundation.Point(0.12, 0.04),
+                EndPoint = new Windows.Foundation.Point(0.92, 1.0),
             };
-            content.Children.Add(new FontIcon
-            {
-                Glyph = "\uE8B7",
-                FontFamily = new FontFamily("Segoe MDL2 Assets"),
-                FontSize = 16,
-                Foreground = palette.IconBrush,
-                HorizontalAlignment = HorizontalAlignment.Center,
-            });
-            content.Children.Add(new TextBlock
-            {
-                Text = "Dev Grid",
-                FontSize = 12,
-                FontFamily = palette.TextFontFamily,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Foreground = palette.CenterTextBrush,
-                HorizontalAlignment = HorizontalAlignment.Center,
-            });
-            content.Children.Add(new TextBlock
-            {
-                Text = "Esc to close",
-                FontSize = 10,
-                FontFamily = palette.TextFontFamily,
-                Foreground = palette.CenterTextBrush,
-                Opacity = 0.72,
-                HorizontalAlignment = HorizontalAlignment.Center,
-            });
-            host.Children.Add(content);
+            coreBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(palette.ButtonAccentColors[1], 0xEC), Offset = 0.0 });
+            coreBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(palette.ButtonAccentColors[4], 0xD4), Offset = 0.58 });
+            coreBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(palette.ButtonAccentColors[6], 0xC0), Offset = 1.0 });
+
+            var core = CreateOrganicSmear(46, 42, coreBrush, 0.96, -12, 12101);
+            core.HorizontalAlignment = HorizontalAlignment.Center;
+            core.VerticalAlignment = VerticalAlignment.Center;
+            core.Margin = new Thickness(1, -2, 0, 0);
+            host.Children.Add(core);
+
+            var shardA = CreateOrganicSmear(18, 10, new SolidColorBrush(WithAlpha(palette.ButtonAccentColors[3], 0xD8)), 0.82, 24, 12102);
+            shardA.HorizontalAlignment = HorizontalAlignment.Right;
+            shardA.VerticalAlignment = VerticalAlignment.Top;
+            shardA.Margin = new Thickness(0, 18, 18, 0);
+            host.Children.Add(shardA);
+
+            var shardB = CreateOrganicSmear(13, 20, new SolidColorBrush(WithAlpha(palette.ButtonAccentColors[5], 0xBA)), 0.72, -18, 12103);
+            shardB.HorizontalAlignment = HorizontalAlignment.Left;
+            shardB.VerticalAlignment = VerticalAlignment.Bottom;
+            shardB.Margin = new Thickness(22, 0, 0, 17);
+            host.Children.Add(shardB);
+
+            var shardC = CreateOrganicSmear(10, 10, new SolidColorBrush(WithAlpha(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), 0x88)), 0.6, 8, 12104);
+            shardC.HorizontalAlignment = HorizontalAlignment.Right;
+            shardC.VerticalAlignment = VerticalAlignment.Bottom;
+            shardC.Margin = new Thickness(0, 0, 26, 24);
+            host.Children.Add(shardC);
+
             return host;
         }
 
@@ -1476,7 +1461,7 @@ namespace TopToolbar
                         }
                         break;
                     case RadialEntryKind.Snapshot:
-                        await HandleSnapshotButtonClickAsync(null).ConfigureAwait(true);
+                        await HandleQuickSnapshotAsync(null).ConfigureAwait(true);
                         break;
                     case RadialEntryKind.Settings:
                         OpenSettingsWindow();
