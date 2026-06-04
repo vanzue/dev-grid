@@ -112,11 +112,40 @@ namespace TopToolbar
 
             public required IReadOnlyList<Color> ButtonAccentColors { get; init; }
 
+            public required Color SnapshotAccentColor { get; init; }
+
+            public required Color SettingsAccentColor { get; init; }
+
             public required Color AccentAColor { get; init; }
 
             public required Color NotificationAccentColor { get; init; }
 
             public required FontFamily TextFontFamily { get; init; }
+        }
+
+        private sealed class RadialThemePalette
+        {
+            public required Color[] TileColors { get; init; }
+
+            public required Color SurfaceInner { get; init; }
+
+            public required Color SurfaceMiddle { get; init; }
+
+            public required Color SurfaceOuter { get; init; }
+
+            public required Color Stroke { get; init; }
+
+            public required Color CoreAccent { get; init; }
+
+            public required Color LabelPlate { get; init; }
+
+            public required Color Label { get; init; }
+
+            public required Color Category { get; init; }
+
+            public required Color SnapshotAccent { get; init; }
+
+            public required Color SettingsAccent { get; init; }
         }
 
         private void ApplyDisplayMode(ToolbarDisplayMode mode)
@@ -726,12 +755,12 @@ namespace TopToolbar
         {
             if (kind == RadialEntryKind.Settings)
             {
-                return Color.FromArgb(0xFF, 0xFF, 0x3B, 0x5C);
+                return palette.SettingsAccentColor;
             }
 
             if (kind == RadialEntryKind.Snapshot)
             {
-                return Color.FromArgb(0xFF, 0xFF, 0xB0, 0x00);
+                return palette.SnapshotAccentColor;
             }
 
             var colors = palette.ButtonAccentColors;
@@ -1115,17 +1144,8 @@ namespace TopToolbar
 
             EnsureAccentPair(theme, tokens);
 
-            var boldTileColors = new[]
-            {
-                Color.FromArgb(0xFF, 0x20, 0x5B, 0xFF),
-                Color.FromArgb(0xFF, 0xD6, 0x16, 0xFF),
-                Color.FromArgb(0xFF, 0x00, 0xC2, 0x8C),
-                Color.FromArgb(0xFF, 0xFF, 0x4D, 0x00),
-                Color.FromArgb(0xFF, 0x70, 0x35, 0xFF),
-                Color.FromArgb(0xFF, 0x00, 0x8C, 0xFF),
-                Color.FromArgb(0xFF, 0xE8, 0x12, 0x5B),
-                Color.FromArgb(0xFF, 0x12, 0xB8, 0x2F),
-            };
+            var radialTheme = GetRadialThemePalette(theme);
+            var boldTileColors = radialTheme.TileColors;
             var buttonSurface = BlendRgb(tokens.BackgroundInner, tokens.BackgroundMiddle, 0.30);
             var buttonHover = BlendRgb(tokens.ButtonHover, tokens.BackgroundInner, 0.22);
             var buttonPressed = BlendRgb(tokens.ButtonPressed, tokens.BackgroundOuter, 0.16);
@@ -1149,9 +1169,9 @@ namespace TopToolbar
                 RadiusX = 0.68,
                 RadiusY = 0.68,
             };
-            ringSurfaceBrush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0xDE, 0x08, 0x0A, 0x12), Offset = 0.0 });
-            ringSurfaceBrush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0xD4, 0x0D, 0x10, 0x1E), Offset = 0.48 });
-            ringSurfaceBrush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0xC8, 0x03, 0x04, 0x08), Offset = 1.0 });
+            ringSurfaceBrush.GradientStops.Add(new GradientStop { Color = radialTheme.SurfaceInner, Offset = 0.0 });
+            ringSurfaceBrush.GradientStops.Add(new GradientStop { Color = radialTheme.SurfaceMiddle, Offset = 0.48 });
+            ringSurfaceBrush.GradientStops.Add(new GradientStop { Color = radialTheme.SurfaceOuter, Offset = 1.0 });
 
             var ringOverlayBrush = new RadialGradientBrush
             {
@@ -1171,9 +1191,9 @@ namespace TopToolbar
                 RadiusX = 0.74,
                 RadiusY = 0.74,
             };
-            coreSurfaceBrush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0xF0, 0x12, 0x15, 0x24), Offset = 0.0 });
-            coreSurfaceBrush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0xE8, 0x08, 0x0A, 0x12), Offset = 0.58 });
-            coreSurfaceBrush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0xDC, 0x03, 0x04, 0x08), Offset = 1.0 });
+            coreSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(BlendRgb(radialTheme.SurfaceInner, radialTheme.CoreAccent, 0.12), 0xF0), Offset = 0.0 });
+            coreSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(radialTheme.SurfaceMiddle, 0xE8), Offset = 0.58 });
+            coreSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(radialTheme.SurfaceOuter, 0xDC), Offset = 1.0 });
 
             var buttonSurfaceBrush = new LinearGradientBrush
             {
@@ -1227,30 +1247,196 @@ namespace TopToolbar
                 HaloBrush = haloBrush,
                 RingSurfaceBrush = ringSurfaceBrush,
                 RingOverlayBrush = ringOverlayBrush,
-                RingStrokeBrush = new SolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)),
+                RingStrokeBrush = new SolidColorBrush(radialTheme.Stroke),
                 OrbitStrokeBrush = new SolidColorBrush(Color.FromArgb(0x00, 0x00, 0x00, 0x00)),
                 OrbitFillBrush = new SolidColorBrush(Color.FromArgb(0x00, 0x00, 0x00, 0x00)),
                 CoreSurfaceBrush = coreSurfaceBrush,
-                CoreStrokeBrush = new SolidColorBrush(Color.FromArgb(0x82, 0xFF, 0xFF, 0xFF)),
-                CoreAccentBrush = new SolidColorBrush(WithAlpha(boldTileColors[1], 0x96)),
+                CoreStrokeBrush = new SolidColorBrush(WithAlpha(radialTheme.Stroke, 0x92)),
+                CoreAccentBrush = new SolidColorBrush(WithAlpha(radialTheme.CoreAccent, 0x96)),
                 ButtonSurfaceBrush = buttonSurfaceBrush,
                 ButtonHoverBrush = buttonHoverBrush,
                 ButtonPressedBrush = buttonPressedBrush,
                 ButtonStrokeBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.Border, tokens.Label, 0.06), 0xB6)),
                 ButtonGlowBrush = new SolidColorBrush(WithAlpha(_accentA, 0x22)),
                 ButtonIconHostBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.BackgroundOuter, tokens.BackgroundInner, 0.18), 0x68)),
-                ButtonLabelBrush = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)),
-                ButtonLabelPlateBrush = new SolidColorBrush(Color.FromArgb(0xE8, 0x04, 0x06, 0x0D)),
-                ButtonCategoryBrush = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
-                IconBrush = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)),
-                CenterTextBrush = new SolidColorBrush(Color.FromArgb(0xEA, 0xFF, 0xFF, 0xFF)),
+                ButtonLabelBrush = new SolidColorBrush(radialTheme.Label),
+                ButtonLabelPlateBrush = new SolidColorBrush(radialTheme.LabelPlate),
+                ButtonCategoryBrush = new SolidColorBrush(radialTheme.Category),
+                IconBrush = new SolidColorBrush(radialTheme.Label),
+                CenterTextBrush = new SolidColorBrush(WithAlpha(radialTheme.Label, 0xEA)),
                 AccentChipBrush = new SolidColorBrush(WithAlpha(_accentA, 0xC8)),
                 AccentSmearBrush = accentSmearBrush,
                 AccentSmearSoftBrush = accentSmearSoftBrush,
                 ButtonAccentColors = boldTileColors,
+                SnapshotAccentColor = radialTheme.SnapshotAccent,
+                SettingsAccentColor = radialTheme.SettingsAccent,
                 AccentAColor = _accentA,
                 NotificationAccentColor = tokens.NotificationAccent,
                 TextFontFamily = new FontFamily(tokens.FontFamily),
+            };
+        }
+
+        private static RadialThemePalette GetRadialThemePalette(ToolbarTheme theme)
+        {
+            static Color C(string hex) => Hex(hex);
+            static Color A(string hex, byte alpha) => Hex(hex, alpha);
+
+            return theme switch
+            {
+                ToolbarTheme.ArcticGlass => new RadialThemePalette
+                {
+                    TileColors = new[] { C("00A6FF"), C("6D5BFF"), C("00E5FF"), C("B9F2FF"), C("3D7CFF"), C("00FFC8"), C("D7E7FF"), C("7A5CFF") },
+                    SurfaceInner = A("071625", 0xDE),
+                    SurfaceMiddle = A("06101C", 0xD6),
+                    SurfaceOuter = A("02070D", 0xC8),
+                    Stroke = A("B9F2FF", 0x76),
+                    CoreAccent = C("00E5FF"),
+                    LabelPlate = A("020914", 0xEA),
+                    Label = C("F5FBFF"),
+                    Category = A("E8F8FF", 0xCE),
+                    SnapshotAccent = C("7A5CFF"),
+                    SettingsAccent = C("00A6FF"),
+                },
+                ToolbarTheme.SunrisePaper => new RadialThemePalette
+                {
+                    TileColors = new[] { C("FF4D00"), C("FFB000"), C("FF2D7A"), C("F24A72"), C("FF7A00"), C("C9184A"), C("FFD166"), C("F72585") },
+                    SurfaceInner = A("261008", 0xDE),
+                    SurfaceMiddle = A("1A0907", 0xD6),
+                    SurfaceOuter = A("100304", 0xC8),
+                    Stroke = A("FFD166", 0x72),
+                    CoreAccent = C("FFB000"),
+                    LabelPlate = A("150505", 0xEA),
+                    Label = C("FFF8EC"),
+                    Category = A("FFF1D5", 0xCE),
+                    SnapshotAccent = C("FFD166"),
+                    SettingsAccent = C("FF2D7A"),
+                },
+                ToolbarTheme.ModernSaaS => new RadialThemePalette
+                {
+                    TileColors = new[] { C("E63946"), C("00B4D8"), C("2EC4B6"), C("4361EE"), C("FF006E"), C("3A86FF"), C("A8DADC"), C("FFBE0B") },
+                    SurfaceInner = A("06152C", 0xDE),
+                    SurfaceMiddle = A("07101F", 0xD6),
+                    SurfaceOuter = A("030711", 0xC8),
+                    Stroke = A("A8DADC", 0x70),
+                    CoreAccent = C("2EC4B6"),
+                    LabelPlate = A("030817", 0xEA),
+                    Label = C("F1FAEE"),
+                    Category = A("E6FFFF", 0xCE),
+                    SnapshotAccent = C("FFBE0B"),
+                    SettingsAccent = C("E63946"),
+                },
+                ToolbarTheme.FintechInnovator => new RadialThemePalette
+                {
+                    TileColors = new[] { C("00C853"), C("D6FF00"), C("00A896"), C("F4A261"), C("2A9D8F"), C("FF7A00"), C("39FF14"), C("E9C46A") },
+                    SurfaceInner = A("071C17", 0xDE),
+                    SurfaceMiddle = A("051410", 0xD6),
+                    SurfaceOuter = A("020806", 0xC8),
+                    Stroke = A("D6FF00", 0x72),
+                    CoreAccent = C("D6FF00"),
+                    LabelPlate = A("020A07", 0xEA),
+                    Label = C("F4FFE8"),
+                    Category = A("E8FFD2", 0xCE),
+                    SnapshotAccent = C("E9C46A"),
+                    SettingsAccent = C("FF7A00"),
+                },
+                ToolbarTheme.B2BSolutions => new RadialThemePalette
+                {
+                    TileColors = new[] { C("2563EB"), C("38BDF8"), C("0F766E"), C("F97316"), C("64748B"), C("14B8A6"), C("3B82F6"), C("93C5FD") },
+                    SurfaceInner = A("091423", 0xDE),
+                    SurfaceMiddle = A("07101A", 0xD6),
+                    SurfaceOuter = A("030712", 0xC8),
+                    Stroke = A("93C5FD", 0x70),
+                    CoreAccent = C("38BDF8"),
+                    LabelPlate = A("030817", 0xEA),
+                    Label = C("F8FBFF"),
+                    Category = A("DCEBFF", 0xCE),
+                    SnapshotAccent = C("F97316"),
+                    SettingsAccent = C("2563EB"),
+                },
+                ToolbarTheme.SeriousTech => new RadialThemePalette
+                {
+                    TileColors = new[] { C("007BFF"), C("00D1FF"), C("2B2D42"), C("8D99AE"), C("3A86FF"), C("00FF85"), C("FF3D71"), C("ADB5BD") },
+                    SurfaceInner = A("0B0F16", 0xE2),
+                    SurfaceMiddle = A("070A0F", 0xDA),
+                    SurfaceOuter = A("020305", 0xCC),
+                    Stroke = A("ADB5BD", 0x74),
+                    CoreAccent = C("007BFF"),
+                    LabelPlate = A("020305", 0xEC),
+                    Label = C("F3F6FA"),
+                    Category = A("DDE4EC", 0xCE),
+                    SnapshotAccent = C("00FF85"),
+                    SettingsAccent = C("007BFF"),
+                },
+                ToolbarTheme.LegalInsurance => new RadialThemePalette
+                {
+                    TileColors = new[] { C("8A4F5A"), C("C5A56F"), C("4C1A22"), C("D4AF37"), C("7F1D1D"), C("A855F7"), C("B4B8C5"), C("F59E0B") },
+                    SurfaceInner = A("1D0B10", 0xDE),
+                    SurfaceMiddle = A("14070A", 0xD6),
+                    SurfaceOuter = A("0A0305", 0xC8),
+                    Stroke = A("C5A56F", 0x70),
+                    CoreAccent = C("C5A56F"),
+                    LabelPlate = A("0D0305", 0xEA),
+                    Label = C("FFF7E8"),
+                    Category = A("FFEAC2", 0xCE),
+                    SnapshotAccent = C("D4AF37"),
+                    SettingsAccent = C("8A4F5A"),
+                },
+                ToolbarTheme.DigitalProduct => new RadialThemePalette
+                {
+                    TileColors = new[] { C("04D9FF"), C("FF00E5"), C("05F4B7"), C("7C3AED"), C("02F5E1"), C("FF2E63"), C("39FF14"), C("3A86FF") },
+                    SurfaceInner = A("07072A", 0xE0),
+                    SurfaceMiddle = A("05051A", 0xD8),
+                    SurfaceOuter = A("010109", 0xCC),
+                    Stroke = A("04D9FF", 0x78),
+                    CoreAccent = C("05F4B7"),
+                    LabelPlate = A("01010B", 0xEA),
+                    Label = C("F8FFFF"),
+                    Category = A("D9FFFF", 0xD4),
+                    SnapshotAccent = C("39FF14"),
+                    SettingsAccent = C("FF00E5"),
+                },
+                ToolbarTheme.JewelTone => new RadialThemePalette
+                {
+                    TileColors = new[] { C("0A9396"), C("005F73"), C("EE9B00"), C("AE2012"), C("9B5DE5"), C("00F5D4"), C("E9D8A6"), C("CA6702") },
+                    SurfaceInner = A("001B22", 0xE0),
+                    SurfaceMiddle = A("001219", 0xD8),
+                    SurfaceOuter = A("00080C", 0xCC),
+                    Stroke = A("94D2BD", 0x72),
+                    CoreAccent = C("EE9B00"),
+                    LabelPlate = A("00080C", 0xEA),
+                    Label = C("FFF6D7"),
+                    Category = A("E9D8A6", 0xD4),
+                    SnapshotAccent = C("EE9B00"),
+                    SettingsAccent = C("AE2012"),
+                },
+                ToolbarTheme.MinimalCloudMonochrome => new RadialThemePalette
+                {
+                    TileColors = new[] { C("111111"), C("F8F8F8"), C("707070"), C("D6FF00"), C("2D2D2D"), C("B7B7B7"), C("000000"), C("E5E5E5") },
+                    SurfaceInner = A("F7F7F7", 0xE8),
+                    SurfaceMiddle = A("D9D9D9", 0xDC),
+                    SurfaceOuter = A("FAFAFA", 0xD0),
+                    Stroke = A("111111", 0x70),
+                    CoreAccent = C("D6FF00"),
+                    LabelPlate = A("050505", 0xEA),
+                    Label = C("FFFFFF"),
+                    Category = A("FFFFFF", 0xD0),
+                    SnapshotAccent = C("D6FF00"),
+                    SettingsAccent = C("111111"),
+                },
+                _ => new RadialThemePalette
+                {
+                    TileColors = new[] { C("205BFF"), C("D616FF"), C("00C28C"), C("FF4D00"), C("7035FF"), C("008CFF"), C("E8125B"), C("12B82F") },
+                    SurfaceInner = A("080A12", 0xDE),
+                    SurfaceMiddle = A("0D101E", 0xD4),
+                    SurfaceOuter = A("030408", 0xC8),
+                    Stroke = A("FFFFFF", 0x66),
+                    CoreAccent = C("D616FF"),
+                    LabelPlate = A("04060D", 0xE8),
+                    Label = C("FFFFFF"),
+                    Category = A("FFFFFF", 0xCC),
+                    SnapshotAccent = C("FFB000"),
+                    SettingsAccent = C("FF3B5C"),
+                },
             };
         }
 
