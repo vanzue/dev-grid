@@ -924,17 +924,6 @@ namespace TopToolbar
             var tileHoverBrush = CreateBoldTileBrush(accentColor, secondaryColor, hover: true, pressed: false);
             var tilePressedBrush = CreateBoldTileBrush(accentColor, secondaryColor, hover: false, pressed: true);
 
-            var glowBrush = new RadialGradientBrush
-            {
-                Center = new Windows.Foundation.Point(0.5, 0.5),
-                GradientOrigin = new Windows.Foundation.Point(0.5, 0.5),
-                RadiusX = 0.72,
-                RadiusY = 0.72,
-            };
-            glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(accentColor, 0x78), Offset = 0.0 });
-            glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(secondaryColor, 0x28), Offset = 0.54 });
-            glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(accentColor, 0x00), Offset = 1.0 });
-
             var root = new Grid
             {
                 Width = itemSize,
@@ -949,20 +938,31 @@ namespace TopToolbar
             };
             root.RenderTransform = scale;
 
-            var glow = new Border
+            var liquidBrush = new LinearGradientBrush
             {
-                CornerRadius = new CornerRadius(30),
-                Background = glowBrush,
-                Opacity = 0.0,
-                Margin = new Thickness(4),
-                IsHitTestVisible = false,
+                StartPoint = new Windows.Foundation.Point(0.0, 0.15),
+                EndPoint = new Windows.Foundation.Point(1.0, 0.88),
             };
-            root.Children.Add(glow);
+            liquidBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), 0x92), Offset = 0.0 });
+            liquidBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(secondaryColor, 0xA6), Offset = 0.46 });
+            liquidBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(accentColor, 0x46), Offset = 1.0 });
 
             var tile = CreateOrganicSmear(itemSize * 0.92, itemSize * 0.92, tileBrush, 1.0, GetRadialTileRotation(index), 7100 + index);
             tile.HorizontalAlignment = HorizontalAlignment.Center;
             tile.VerticalAlignment = VerticalAlignment.Center;
             root.Children.Add(tile);
+
+            var liquidBack = CreateOrganicSmear(itemSize * 0.78, itemSize * 0.46, liquidBrush, 0.28, -24 + (index % 3 * 9), 9100 + index);
+            liquidBack.HorizontalAlignment = HorizontalAlignment.Center;
+            liquidBack.VerticalAlignment = VerticalAlignment.Center;
+            liquidBack.Margin = new Thickness(-8, -2, 0, 0);
+            root.Children.Add(liquidBack);
+
+            var liquidDrop = CreateOrganicSmear(itemSize * 0.34, itemSize * 0.26, new SolidColorBrush(WithAlpha(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), 0xB8)), 0.18, 18, 9500 + index);
+            liquidDrop.HorizontalAlignment = HorizontalAlignment.Left;
+            liquidDrop.VerticalAlignment = VerticalAlignment.Bottom;
+            liquidDrop.Margin = new Thickness(12, 0, 0, 13);
+            root.Children.Add(liquidDrop);
 
             var slash = new Border
             {
@@ -973,6 +973,7 @@ namespace TopToolbar
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Top,
                 Margin = new Thickness(0, 12, 4, 0),
+                Opacity = 0.54,
                 IsHitTestVisible = false,
                 RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5),
                 RenderTransform = new RotateTransform { Angle = -18 },
@@ -1008,26 +1009,15 @@ namespace TopToolbar
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            var iconHost = new Border
-            {
-                Width = 34,
-                Height = 34,
-                CornerRadius = new CornerRadius(13),
-                Background = new SolidColorBrush(WithAlpha(Color.FromArgb(0xFF, 0x03, 0x05, 0x0A), 0x52)),
-                BorderBrush = new SolidColorBrush(WithAlpha(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), 0x6C)),
-                BorderThickness = new Thickness(1.1),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            iconHost.Child = new ToolbarIconPresenter
+            var icon = new ToolbarIconPresenter
             {
                 Button = entry.IconButton,
-                IconSize = 20,
+                IconSize = 22,
                 Foreground = Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            body.Children.Add(iconHost);
+            body.Children.Add(icon);
             Grid.SetRow(body, 1);
             content.Children.Add(body);
 
@@ -1089,7 +1079,8 @@ namespace TopToolbar
                 tile.Fill = tileHoverBrush;
                 AnimateDouble(scale, "ScaleX", 1.05, 200, true);
                 AnimateDouble(scale, "ScaleY", 1.05, 200, true);
-                AnimateDouble(glow, "Opacity", 0.9, 220, false);
+                AnimateDouble(liquidBack, "Opacity", 0.74, 220, false);
+                AnimateDouble(liquidDrop, "Opacity", 0.58, 240, false);
                 AnimateDouble(slash, "Opacity", 1.0, 180, false);
                 AnimateDouble(hoverLabel, "Opacity", 1.0, 200, false);
             };
@@ -1099,7 +1090,8 @@ namespace TopToolbar
                 tile.Fill = tileBrush;
                 AnimateDouble(scale, "ScaleX", 1.0, 260, true);
                 AnimateDouble(scale, "ScaleY", 1.0, 260, true);
-                AnimateDouble(glow, "Opacity", 0.0, 280, false);
+                AnimateDouble(liquidBack, "Opacity", 0.28, 280, false);
+                AnimateDouble(liquidDrop, "Opacity", 0.18, 260, false);
                 AnimateDouble(slash, "Opacity", 0.72, 220, false);
                 AnimateDouble(hoverLabel, "Opacity", 0.0, 220, false);
             };
@@ -1109,7 +1101,8 @@ namespace TopToolbar
                 tile.Fill = tilePressedBrush;
                 AnimateDouble(scale, "ScaleX", 0.98, 120, true);
                 AnimateDouble(scale, "ScaleY", 0.98, 120, true);
-                AnimateDouble(glow, "Opacity", 0.72, 140, false);
+                AnimateDouble(liquidBack, "Opacity", 0.82, 140, false);
+                AnimateDouble(liquidDrop, "Opacity", 0.68, 140, false);
                 AnimateDouble(slash, "Opacity", 0.92, 120, false);
                 AnimateDouble(hoverLabel, "Opacity", 1.0, 120, false);
             };
@@ -1119,7 +1112,8 @@ namespace TopToolbar
                 tile.Fill = tileHoverBrush;
                 AnimateDouble(scale, "ScaleX", 1.05, 200, true);
                 AnimateDouble(scale, "ScaleY", 1.05, 200, true);
-                AnimateDouble(glow, "Opacity", 0.9, 220, false);
+                AnimateDouble(liquidBack, "Opacity", 0.74, 220, false);
+                AnimateDouble(liquidDrop, "Opacity", 0.58, 220, false);
                 AnimateDouble(slash, "Opacity", 1.0, 160, false);
                 AnimateDouble(hoverLabel, "Opacity", 1.0, 200, false);
             };
