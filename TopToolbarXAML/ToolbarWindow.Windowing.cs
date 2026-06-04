@@ -43,6 +43,9 @@ namespace TopToolbar
         {
             const int WM_DPICHANGED = 0x02E0;
             const int WM_HOTKEY = 0x0312;
+            const int WM_KEYDOWN = 0x0100;
+            const int WM_SYSKEYDOWN = 0x0104;
+            const int VK_ESCAPE = 0x1B;
             if (msg == WM_DPICHANGED)
             {
                 // lParam points to a RECT in new DPI suggested size/pos
@@ -65,6 +68,11 @@ namespace TopToolbar
                     TryEnqueueRadialHotKeyPress();
                     return IntPtr.Zero;
                 }
+            }
+            else if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wParam.ToInt32() == VK_ESCAPE && _isRadialVisible)
+            {
+                HideRadialMenu();
+                return IntPtr.Zero;
             }
 
             return CallWindowProc(_oldWndProc, hWnd, msg, wParam, lParam);
@@ -154,6 +162,17 @@ namespace TopToolbar
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
 
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
 
     }
 }

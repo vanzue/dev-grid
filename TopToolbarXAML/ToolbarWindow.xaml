@@ -504,6 +504,7 @@
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
                 IsHitTestVisible="True"
+                PointerPressed="OnRadialCanvasPointerPressed"
                 MinWidth="280"
                 MinHeight="280"/>
     </Grid>

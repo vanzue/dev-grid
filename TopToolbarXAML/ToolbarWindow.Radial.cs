@@ -35,7 +35,10 @@ namespace TopToolbar
         private System.Timers.Timer _radialHotKeyPollTimer;
         private bool _radialFallbackPolling;
         private bool _lastAltSpaceDown;
+        private bool _lastEscapeDown;
+        private bool _lastMouseDown;
         private long _lastRadialHotKeyTriggerTick;
+        private long _radialShownTick;
 
         private enum RadialEntryKind
         {
@@ -104,6 +107,10 @@ namespace TopToolbar
             public required Brush AccentChipBrush { get; init; }
 
             public required Brush AccentSmearBrush { get; init; }
+
+            public required Brush AccentSmearSoftBrush { get; init; }
+
+            public required IReadOnlyList<Color> ButtonAccentColors { get; init; }
 
             public required Color AccentAColor { get; init; }
 
@@ -176,10 +183,11 @@ namespace TopToolbar
 
             if (_isRadialVisible)
             {
-                // Keep radial visible; close is explicitly Esc or action click.
+                HideRadialMenu();
                 return;
             }
 
+            CloseSettingsWindow();
             _ = ShowRadialMenuAtCursorAsync();
         }
 
@@ -207,6 +215,8 @@ namespace TopToolbar
         {
             _radialFallbackPolling = false;
             _lastAltSpaceDown = false;
+            _lastEscapeDown = false;
+            _lastMouseDown = false;
 
             if (_radialHotKeyPollTimer == null)
             {
@@ -242,6 +252,30 @@ namespace TopToolbar
             }
 
             _lastAltSpaceDown = comboDown;
+
+            const int VkEscape = 0x1B;
+            var escapeDown = (GetAsyncKeyState(VkEscape) & 0x8000) != 0;
+            if (_isRadialVisible && escapeDown && !_lastEscapeDown)
+            {
+                TryEnqueueRadialDismiss();
+            }
+
+            _lastEscapeDown = escapeDown;
+
+            const int VkLeftButton = 0x01;
+            const int VkRightButton = 0x02;
+            var mouseDown = (GetAsyncKeyState(VkLeftButton) & 0x8000) != 0 ||
+                            (GetAsyncKeyState(VkRightButton) & 0x8000) != 0;
+            if (_isRadialVisible && mouseDown && !_lastMouseDown)
+            {
+                var elapsedSinceShow = Environment.TickCount64 - _radialShownTick;
+                if (elapsedSinceShow > 250 && IsCursorOutsideRadialWindow())
+                {
+                    TryEnqueueRadialDismiss();
+                }
+            }
+
+            _lastMouseDown = mouseDown;
         }
 
         private void TryEnqueueRadialHotKeyPress()
@@ -255,6 +289,24 @@ namespace TopToolbar
 
             _lastRadialHotKeyTriggerTick = now;
             _ = DispatcherQueue?.TryEnqueue(OnRadialHotKeyPressed);
+        }
+
+        private void TryEnqueueRadialDismiss()
+        {
+            _ = DispatcherQueue?.TryEnqueue(HideRadialMenu);
+        }
+
+        private bool IsCursorOutsideRadialWindow()
+        {
+            if (_hwnd == IntPtr.Zero || !GetWindowRect(_hwnd, out var rect) || !GetCursorPos(out var cursor))
+            {
+                return false;
+            }
+
+            return cursor.X < rect.Left ||
+                   cursor.X >= rect.Right ||
+                   cursor.Y < rect.Top ||
+                   cursor.Y >= rect.Bottom;
         }
 
         private async Task ShowRadialMenuAtCursorAsync()
@@ -316,6 +368,7 @@ namespace TopToolbar
 
                     _isRadialVisible = true;
                     _isVisible = false;
+                    _radialShownTick = Environment.TickCount64;
 
                     RadialCanvas.Visibility = Visibility.Visible;
                     ToolbarContainer.Visibility = Visibility.Collapsed;
@@ -560,77 +613,18 @@ namespace TopToolbar
             RadialCanvas.Children.Add(ringSurface);
 
             var ringOverlayDiameter = (outerRadius * 2d) + itemSize + 16;
-            var ringOverlay = new Ellipse
-            {
-                Width = ringOverlayDiameter,
-                Height = ringOverlayDiameter,
-                Fill = palette.RingOverlayBrush,
-                Stroke = palette.RingStrokeBrush,
-                StrokeThickness = 0.8,
-                IsHitTestVisible = false,
-            };
-            Canvas.SetLeft(ringOverlay, center - (ringOverlayDiameter / 2d));
-            Canvas.SetTop(ringOverlay, center - (ringOverlayDiameter / 2d));
-            RadialCanvas.Children.Add(ringOverlay);
 
-            var smearA = new Rectangle
+            void AddShard(double width, double height, double opacity, double rotation, double centerX, double centerY, Color color, int seed)
             {
-                Width = ringOverlayDiameter * 0.42,
-                Height = 30,
-                RadiusX = 13,
-                RadiusY = 13,
-                Fill = palette.AccentSmearBrush,
-                Opacity = 0.52,
-                IsHitTestVisible = false,
-                RenderTransform = new RotateTransform { Angle = -24 },
-            };
-            Canvas.SetLeft(smearA, center + (outerRadius * 0.06));
-            Canvas.SetTop(smearA, center - outerRadius - 8);
-            RadialCanvas.Children.Add(smearA);
-
-            var smearB = new Rectangle
-            {
-                Width = ringOverlayDiameter * 0.30,
-                Height = 20,
-                RadiusX = 9,
-                RadiusY = 9,
-                Fill = palette.AccentSmearBrush,
-                Opacity = 0.34,
-                IsHitTestVisible = false,
-                RenderTransform = new RotateTransform { Angle = 32 },
-            };
-            Canvas.SetLeft(smearB, center - outerRadius - 18);
-            Canvas.SetTop(smearB, center + (outerRadius * 0.34));
-            RadialCanvas.Children.Add(smearB);
-
-            var smearC = new Ellipse
-            {
-                Width = 108,
-                Height = 62,
-                Fill = palette.AccentSmearBrush,
-                Opacity = 0.26,
-                IsHitTestVisible = false,
-            };
-            Canvas.SetLeft(smearC, center + (outerRadius * 0.54));
-            Canvas.SetTop(smearC, center + (outerRadius * 0.18));
-            RadialCanvas.Children.Add(smearC);
-
-            for (var ringIndex = 0; ringIndex < rings.Count; ringIndex++)
-            {
-                var ringDiameter = (rings[ringIndex].radius * 2d) + itemSize + 2;
-                var orbitGuide = new Ellipse
-                {
-                    Width = ringDiameter,
-                    Height = ringDiameter,
-                    Fill = palette.OrbitFillBrush,
-                    Stroke = palette.OrbitStrokeBrush,
-                    StrokeThickness = ringIndex == rings.Count - 1 ? 1.1 : 0.9,
-                    IsHitTestVisible = false,
-                };
-                Canvas.SetLeft(orbitGuide, center - (ringDiameter / 2d));
-                Canvas.SetTop(orbitGuide, center - (ringDiameter / 2d));
-                RadialCanvas.Children.Add(orbitGuide);
+                var blob = CreateOrganicSmear(width, height, new SolidColorBrush(WithAlpha(color, 0xD8)), opacity, rotation, seed);
+                Canvas.SetLeft(blob, centerX - (width / 2d));
+                Canvas.SetTop(blob, centerY - (height / 2d));
+                RadialCanvas.Children.Add(blob);
             }
+
+            AddShard(ringOverlayDiameter * 0.52, ringOverlayDiameter * 0.24, 0.22, -18, center + (outerRadius * 0.26), center - (outerRadius * 0.52), palette.ButtonAccentColors[1], 4172);
+            AddShard(ringOverlayDiameter * 0.38, ringOverlayDiameter * 0.18, 0.18, 24, center - (outerRadius * 0.54), center + (outerRadius * 0.30), palette.ButtonAccentColors[3], 9051);
+            AddShard(ringOverlayDiameter * 0.30, ringOverlayDiameter * 0.20, 0.16, 8, center + (outerRadius * 0.52), center + (outerRadius * 0.36), palette.ButtonAccentColors[5], 6618);
 
             var centerNode = BuildCenterNode(palette);
             Canvas.SetLeft(centerNode, center - (centerNode.Width / 2d));
@@ -649,12 +643,121 @@ namespace TopToolbar
                     var angle = (-Math.PI / 2d) + ((2d * Math.PI * i) / count) + ringOffset;
                     var x = center + (Math.Cos(angle) * radius) - (itemSize / 2d);
                     var y = center + (Math.Sin(angle) * radius) - (itemSize / 2d);
-                    var button = BuildRadialButton(entries[index], itemSize, palette);
+                    var button = BuildRadialButton(entries[index], itemSize, palette, index);
                     Canvas.SetLeft(button, x);
                     Canvas.SetTop(button, y);
                     RadialCanvas.Children.Add(button);
                 }
             }
+        }
+
+        private static Microsoft.UI.Xaml.Shapes.Path CreateOrganicSmear(
+            double width, double height, Brush fill, double opacity, double rotation, int seed)
+        {
+            var rnd = new Random(seed);
+            var rx = width / 2d;
+            var ry = height / 2d;
+            var cx = rx;
+            var cy = ry;
+            const int points = 9;
+            var outline = new Windows.Foundation.Point[points];
+            for (var i = 0; i < points; i++)
+            {
+                var a = ((2d * Math.PI * i) / points) + (rnd.NextDouble() * 0.22);
+                var jitter = 0.5 + (rnd.NextDouble() * 0.62);
+                outline[i] = new Windows.Foundation.Point(
+                    cx + (Math.Cos(a) * rx * jitter),
+                    cy + (Math.Sin(a) * ry * jitter));
+            }
+
+            static Windows.Foundation.Point Mid(Windows.Foundation.Point p, Windows.Foundation.Point q)
+                => new((p.X + q.X) / 2d, (p.Y + q.Y) / 2d);
+
+            var figure = new PathFigure
+            {
+                IsClosed = true,
+                IsFilled = true,
+                StartPoint = Mid(outline[points - 1], outline[0]),
+            };
+            for (var i = 0; i < points; i++)
+            {
+                figure.Segments.Add(new QuadraticBezierSegment
+                {
+                    Point1 = outline[i],
+                    Point2 = Mid(outline[i], outline[(i + 1) % points]),
+                });
+            }
+
+            var geometry = new PathGeometry();
+            geometry.Figures.Add(figure);
+
+            return new Microsoft.UI.Xaml.Shapes.Path
+            {
+                Data = geometry,
+                Fill = fill,
+                Opacity = opacity,
+                IsHitTestVisible = false,
+                RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5),
+                RenderTransform = new RotateTransform { Angle = rotation },
+            };
+        }
+
+        private static void AnimateDouble(DependencyObject target, string property, double to, double milliseconds, bool dependent)
+        {
+            var animation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+            {
+                To = to,
+                Duration = new Duration(TimeSpan.FromMilliseconds(milliseconds)),
+                EnableDependentAnimation = dependent,
+                EasingFunction = new Microsoft.UI.Xaml.Media.Animation.CubicEase
+                {
+                    EasingMode = Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseOut,
+                },
+            };
+
+            var storyboard = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+            storyboard.Children.Add(animation);
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animation, target);
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation, property);
+            storyboard.Begin();
+        }
+
+        private static Color GetRadialTileAccent(RadialVisualPalette palette, int index, RadialEntryKind kind)
+        {
+            if (kind == RadialEntryKind.Settings)
+            {
+                return Color.FromArgb(0xFF, 0xFF, 0x3B, 0x5C);
+            }
+
+            if (kind == RadialEntryKind.Snapshot)
+            {
+                return Color.FromArgb(0xFF, 0xFF, 0xB0, 0x00);
+            }
+
+            var colors = palette.ButtonAccentColors;
+            return colors[((index % colors.Count) + colors.Count) % colors.Count];
+        }
+
+        private static double GetRadialTileRotation(int index)
+        {
+            var rotations = new[] { -10d, 7d, -5d, 12d, -13d, 4d, 9d, -8d };
+            return rotations[((index % rotations.Length) + rotations.Length) % rotations.Length];
+        }
+
+        private static Brush CreateBoldTileBrush(Color accent, Color secondary, bool hover, bool pressed)
+        {
+            var mix = pressed ? 0.34 : hover ? 0.16 : 0.0;
+            var top = BlendRgb(accent, Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), hover ? 0.10 : 0.02);
+            var bottom = BlendRgb(secondary, Color.FromArgb(0xFF, 0x03, 0x05, 0x0A), mix);
+            var brush = new LinearGradientBrush
+            {
+                StartPoint = new Windows.Foundation.Point(0.0, 0.08),
+                EndPoint = new Windows.Foundation.Point(1.0, 0.92),
+            };
+            brush.GradientStops.Add(new GradientStop { Color = WithAlpha(top, pressed ? (byte)0xE8 : (byte)0xFA), Offset = 0.0 });
+            brush.GradientStops.Add(new GradientStop { Color = WithAlpha(BlendRgb(accent, secondary, 0.42), pressed ? (byte)0xE2 : (byte)0xF0), Offset = 0.48 });
+            brush.GradientStops.Add(new GradientStop { Color = WithAlpha(bottom, pressed ? (byte)0xEE : (byte)0xF6), Offset = 1.0 });
+            return brush;
         }
 
         private static List<(double radius, int count)> CreateRings(int totalCount, double minRadius, double itemSize, double ringSpacing)
@@ -761,7 +864,7 @@ namespace TopToolbar
             return host;
         }
 
-        private Button BuildRadialButton(RadialEntry entry, double itemSize, RadialVisualPalette palette)
+        private Button BuildRadialButton(RadialEntry entry, double itemSize, RadialVisualPalette palette, int index)
         {
             var button = new Button
             {
@@ -786,24 +889,22 @@ namespace TopToolbar
 
             ToolTipService.SetToolTip(button, entry.Label);
 
-            var accentColor = entry.Kind switch
-            {
-                RadialEntryKind.Settings => palette.NotificationAccentColor,
-                _ => palette.AccentAColor,
-            };
+            var accentColor = GetRadialTileAccent(palette, index, entry.Kind);
+            var secondaryColor = GetRadialTileAccent(palette, index + 3, entry.Kind);
+            var tileBrush = CreateBoldTileBrush(accentColor, secondaryColor, hover: false, pressed: false);
+            var tileHoverBrush = CreateBoldTileBrush(accentColor, secondaryColor, hover: true, pressed: false);
+            var tilePressedBrush = CreateBoldTileBrush(accentColor, secondaryColor, hover: false, pressed: true);
 
             var glowBrush = new RadialGradientBrush
             {
                 Center = new Windows.Foundation.Point(0.5, 0.5),
                 GradientOrigin = new Windows.Foundation.Point(0.5, 0.5),
-                RadiusX = 0.62,
-                RadiusY = 0.62,
+                RadiusX = 0.72,
+                RadiusY = 0.72,
             };
-            glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(accentColor, 0x34), Offset = 0.0 });
-            glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(accentColor, 0x16), Offset = 0.52 });
+            glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(accentColor, 0x78), Offset = 0.0 });
+            glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(secondaryColor, 0x28), Offset = 0.54 });
             glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(accentColor, 0x00), Offset = 1.0 });
-
-            var chipBrush = new SolidColorBrush(WithAlpha(accentColor, 0xD8));
 
             var root = new Grid
             {
@@ -829,65 +930,48 @@ namespace TopToolbar
             };
             root.Children.Add(glow);
 
-            var scratch = new Rectangle
+            var tile = CreateOrganicSmear(itemSize * 0.92, itemSize * 0.92, tileBrush, 1.0, GetRadialTileRotation(index), 7100 + index);
+            tile.HorizontalAlignment = HorizontalAlignment.Center;
+            tile.VerticalAlignment = VerticalAlignment.Center;
+            root.Children.Add(tile);
+
+            var slash = new Border
             {
-                Width = itemSize * 0.78,
-                Height = 14,
-                RadiusX = 6,
-                RadiusY = 6,
-                Fill = palette.AccentSmearBrush,
-                Opacity = 0.46,
+                Width = itemSize * 0.54,
+                Height = 6,
+                CornerRadius = new CornerRadius(3),
+                Background = new SolidColorBrush(WithAlpha(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), 0x56)),
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(0, 2, -14, 0),
+                Margin = new Thickness(0, 12, 4, 0),
                 IsHitTestVisible = false,
                 RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5),
-                RenderTransform = new RotateTransform { Angle = -19 },
+                RenderTransform = new RotateTransform { Angle = -18 },
             };
-            root.Children.Add(scratch);
-
-            var scratchEcho = new Rectangle
-            {
-                Width = itemSize * 0.50,
-                Height = 10,
-                RadiusX = 4,
-                RadiusY = 4,
-                Fill = palette.AccentSmearBrush,
-                Opacity = 0.24,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(-12, 0, 0, 10),
-                IsHitTestVisible = false,
-                RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5),
-                RenderTransform = new RotateTransform { Angle = 31 },
-            };
-            root.Children.Add(scratchEcho);
-
-            var card = new Border
-            {
-                CornerRadius = new CornerRadius(28),
-                Background = palette.ButtonSurfaceBrush,
-                BorderBrush = palette.ButtonStrokeBrush,
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(10, 9, 10, 9),
-                Shadow = new ThemeShadow(),
-            };
+            root.Children.Add(slash);
 
             var content = new Grid();
             content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            content.Margin = new Thickness(8, 8, 8, 7);
 
-            var accentChip = new Border
+            var category = new TextBlock
             {
-                Width = 24,
-                Height = 5,
-                CornerRadius = new CornerRadius(2.5),
-                Background = chipBrush,
+                Text = entry.Category?.Length > 10 ? entry.Category[..10].ToUpperInvariant() : (entry.Category ?? string.Empty).ToUpperInvariant(),
+                FontSize = 7.5,
+                FontFamily = palette.TextFontFamily,
+                FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                Foreground = new SolidColorBrush(WithAlpha(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), 0xCC)),
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, 7),
+                TextAlignment = TextAlignment.Center,
+                CharacterSpacing = 110,
+                MaxLines = 1,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(0, 0, 0, 2),
             };
-            Grid.SetRow(accentChip, 0);
-            content.Children.Add(accentChip);
+            Grid.SetRow(category, 0);
+            content.Children.Add(category);
 
             var body = new Grid
             {
@@ -897,12 +981,12 @@ namespace TopToolbar
 
             var iconHost = new Border
             {
-                Width = 36,
-                Height = 36,
-                CornerRadius = new CornerRadius(18),
-                Background = palette.ButtonIconHostBrush,
-                BorderBrush = chipBrush,
-                BorderThickness = new Thickness(0.8),
+                Width = 34,
+                Height = 34,
+                CornerRadius = new CornerRadius(13),
+                Background = new SolidColorBrush(WithAlpha(Color.FromArgb(0xFF, 0x03, 0x05, 0x0A), 0x52)),
+                BorderBrush = new SolidColorBrush(WithAlpha(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), 0x6C)),
+                BorderThickness = new Thickness(1.1),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
@@ -910,7 +994,7 @@ namespace TopToolbar
             {
                 Button = entry.IconButton,
                 IconSize = 20,
-                Foreground = _currentThemeIconColor,
+                Foreground = Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
@@ -918,8 +1002,30 @@ namespace TopToolbar
             Grid.SetRow(body, 1);
             content.Children.Add(body);
 
-            card.Child = content;
-            root.Children.Add(card);
+            var titlePlate = new Border
+            {
+                Background = new SolidColorBrush(WithAlpha(Color.FromArgb(0xFF, 0x04, 0x06, 0x0D), 0x9A)),
+                CornerRadius = new CornerRadius(7),
+                Padding = new Thickness(5, 2, 5, 3),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                MaxWidth = itemSize - 10,
+            };
+            titlePlate.Child = new TextBlock
+            {
+                Text = entry.Title,
+                FontSize = 8.8,
+                FontFamily = palette.TextFontFamily,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                TextAlignment = TextAlignment.Center,
+                TextWrapping = TextWrapping.NoWrap,
+                MaxLines = 1,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            };
+            Grid.SetRow(titlePlate, 2);
+            content.Children.Add(titlePlate);
+            root.Children.Add(content);
 
             var hoverLabelText = new TextBlock
             {
@@ -951,48 +1057,42 @@ namespace TopToolbar
 
             button.PointerEntered += (_, _) =>
             {
-                scale.ScaleX = 1.06;
-                scale.ScaleY = 1.06;
-                card.Background = palette.ButtonHoverBrush;
-                card.BorderBrush = chipBrush;
-                glow.Opacity = 1.0;
-                scratch.Opacity = 0.62;
-                scratchEcho.Opacity = 0.36;
-                hoverLabel.Opacity = 1.0;
+                tile.Fill = tileHoverBrush;
+                AnimateDouble(scale, "ScaleX", 1.05, 200, true);
+                AnimateDouble(scale, "ScaleY", 1.05, 200, true);
+                AnimateDouble(glow, "Opacity", 0.9, 220, false);
+                AnimateDouble(slash, "Opacity", 1.0, 180, false);
+                AnimateDouble(hoverLabel, "Opacity", 1.0, 200, false);
             };
 
             button.PointerExited += (_, _) =>
             {
-                scale.ScaleX = 1;
-                scale.ScaleY = 1;
-                card.Background = palette.ButtonSurfaceBrush;
-                card.BorderBrush = palette.ButtonStrokeBrush;
-                glow.Opacity = 0.0;
-                scratch.Opacity = 0.46;
-                scratchEcho.Opacity = 0.24;
-                hoverLabel.Opacity = 0.0;
+                tile.Fill = tileBrush;
+                AnimateDouble(scale, "ScaleX", 1.0, 260, true);
+                AnimateDouble(scale, "ScaleY", 1.0, 260, true);
+                AnimateDouble(glow, "Opacity", 0.0, 280, false);
+                AnimateDouble(slash, "Opacity", 0.72, 220, false);
+                AnimateDouble(hoverLabel, "Opacity", 0.0, 220, false);
             };
 
             button.PointerPressed += (_, _) =>
             {
-                scale.ScaleX = 0.98;
-                scale.ScaleY = 0.98;
-                card.Background = palette.ButtonPressedBrush;
-                glow.Opacity = 0.72;
-                scratch.Opacity = 0.76;
-                scratchEcho.Opacity = 0.44;
-                hoverLabel.Opacity = 1.0;
+                tile.Fill = tilePressedBrush;
+                AnimateDouble(scale, "ScaleX", 0.98, 120, true);
+                AnimateDouble(scale, "ScaleY", 0.98, 120, true);
+                AnimateDouble(glow, "Opacity", 0.72, 140, false);
+                AnimateDouble(slash, "Opacity", 0.92, 120, false);
+                AnimateDouble(hoverLabel, "Opacity", 1.0, 120, false);
             };
 
             button.PointerReleased += (_, _) =>
             {
-                scale.ScaleX = 1.06;
-                scale.ScaleY = 1.06;
-                card.Background = palette.ButtonHoverBrush;
-                glow.Opacity = 1.0;
-                scratch.Opacity = 0.62;
-                scratchEcho.Opacity = 0.36;
-                hoverLabel.Opacity = 1.0;
+                tile.Fill = tileHoverBrush;
+                AnimateDouble(scale, "ScaleX", 1.05, 200, true);
+                AnimateDouble(scale, "ScaleY", 1.05, 200, true);
+                AnimateDouble(glow, "Opacity", 0.9, 220, false);
+                AnimateDouble(slash, "Opacity", 1.0, 160, false);
+                AnimateDouble(hoverLabel, "Opacity", 1.0, 200, false);
             };
 
             button.Content = root;
@@ -1015,12 +1115,20 @@ namespace TopToolbar
 
             EnsureAccentPair(theme, tokens);
 
-            var blendedAccent = BlendRgb(_accentA, _accentB, 0.5);
-            var innerSurface = BlendRgb(tokens.BackgroundInner, Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), 0.10);
+            var boldTileColors = new[]
+            {
+                Color.FromArgb(0xFF, 0x20, 0x5B, 0xFF),
+                Color.FromArgb(0xFF, 0xD6, 0x16, 0xFF),
+                Color.FromArgb(0xFF, 0x00, 0xC2, 0x8C),
+                Color.FromArgb(0xFF, 0xFF, 0x4D, 0x00),
+                Color.FromArgb(0xFF, 0x70, 0x35, 0xFF),
+                Color.FromArgb(0xFF, 0x00, 0x8C, 0xFF),
+                Color.FromArgb(0xFF, 0xE8, 0x12, 0x5B),
+                Color.FromArgb(0xFF, 0x12, 0xB8, 0x2F),
+            };
             var buttonSurface = BlendRgb(tokens.BackgroundInner, tokens.BackgroundMiddle, 0.30);
             var buttonHover = BlendRgb(tokens.ButtonHover, tokens.BackgroundInner, 0.22);
             var buttonPressed = BlendRgb(tokens.ButtonPressed, tokens.BackgroundOuter, 0.16);
-            var orbitStroke = BlendRgb(tokens.Separator, blendedAccent, 0.32);
 
             var haloBrush = new RadialGradientBrush
             {
@@ -1029,9 +1137,9 @@ namespace TopToolbar
                 RadiusX = 0.5,
                 RadiusY = 0.5,
             };
-            haloBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accentA, 0x18), Offset = 0.0 });
-            haloBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accentA, 0x22), Offset = 0.28 });
-            haloBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accentA, 0x14), Offset = 0.56 });
+            haloBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(boldTileColors[1], 0x2C), Offset = 0.0 });
+            haloBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(boldTileColors[5], 0x22), Offset = 0.42 });
+            haloBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(boldTileColors[6], 0x18), Offset = 0.68 });
             haloBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(tokens.BackgroundOuter, 0x00), Offset = 1.0 });
 
             var ringSurfaceBrush = new RadialGradientBrush
@@ -1041,9 +1149,9 @@ namespace TopToolbar
                 RadiusX = 0.68,
                 RadiusY = 0.68,
             };
-            ringSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(innerSurface, 0xF0), Offset = 0.0 });
-            ringSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(BlendRgb(tokens.BackgroundMiddle, _accentA, 0.08), 0xDD), Offset = 0.48 });
-            ringSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(tokens.BackgroundOuter, 0xCE), Offset = 1.0 });
+            ringSurfaceBrush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0xDE, 0x08, 0x0A, 0x12), Offset = 0.0 });
+            ringSurfaceBrush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0xD4, 0x0D, 0x10, 0x1E), Offset = 0.48 });
+            ringSurfaceBrush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0xC8, 0x03, 0x04, 0x08), Offset = 1.0 });
 
             var ringOverlayBrush = new RadialGradientBrush
             {
@@ -1052,9 +1160,9 @@ namespace TopToolbar
                 RadiusX = 0.74,
                 RadiusY = 0.74,
             };
-            ringOverlayBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), 0x24), Offset = 0.0 });
-            ringOverlayBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accentA, 0x16), Offset = 0.34 });
-            ringOverlayBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(tokens.BackgroundOuter, 0x14), Offset = 1.0 });
+            ringOverlayBrush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF), Offset = 0.0 });
+            ringOverlayBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(boldTileColors[0], 0x10), Offset = 0.46 });
+            ringOverlayBrush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0x00, 0x00, 0x00, 0x00), Offset = 1.0 });
 
             var coreSurfaceBrush = new RadialGradientBrush
             {
@@ -1063,9 +1171,9 @@ namespace TopToolbar
                 RadiusX = 0.74,
                 RadiusY = 0.74,
             };
-            coreSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(BlendRgb(tokens.BackgroundInner, _accentA, 0.10), 0xF2), Offset = 0.0 });
-            coreSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(BlendRgb(tokens.BackgroundMiddle, _accentB, 0.12), 0xE4), Offset = 0.48 });
-            coreSurfaceBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(BlendRgb(tokens.BackgroundOuter, blendedAccent, 0.12), 0xD8), Offset = 1.0 });
+            coreSurfaceBrush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0xF0, 0x12, 0x15, 0x24), Offset = 0.0 });
+            coreSurfaceBrush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0xE8, 0x08, 0x0A, 0x12), Offset = 0.58 });
+            coreSurfaceBrush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0xDC, 0x03, 0x04, 0x08), Offset = 1.0 });
 
             var buttonSurfaceBrush = new LinearGradientBrush
             {
@@ -1101,30 +1209,45 @@ namespace TopToolbar
             accentSmearBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(tokens.NotificationAccent, 0x7A), Offset = 0.68 });
             accentSmearBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(tokens.NotificationAccent, 0x00), Offset = 1.0 });
 
+            var accentSmearSoftBrush = new RadialGradientBrush
+            {
+                Center = new Windows.Foundation.Point(0.5, 0.5),
+                GradientOrigin = new Windows.Foundation.Point(0.42, 0.40),
+                RadiusX = 0.62,
+                RadiusY = 0.62,
+                SpreadMethod = GradientSpreadMethod.Pad,
+            };
+            accentSmearSoftBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(BlendRgb(_accentA, tokens.NotificationAccent, 0.18), 0xA8), Offset = 0.0 });
+            accentSmearSoftBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accentA, 0x52), Offset = 0.46 });
+            accentSmearSoftBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(tokens.NotificationAccent, 0x22), Offset = 0.74 });
+            accentSmearSoftBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(tokens.NotificationAccent, 0x00), Offset = 1.0 });
+
             return new RadialVisualPalette
             {
                 HaloBrush = haloBrush,
                 RingSurfaceBrush = ringSurfaceBrush,
                 RingOverlayBrush = ringOverlayBrush,
-                RingStrokeBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.Border, _accentA, 0.08), 0xAE)),
-                OrbitStrokeBrush = new SolidColorBrush(WithAlpha(BlendRgb(orbitStroke, blendedAccent, 0.28), 0x88)),
-                OrbitFillBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.BackgroundMiddle, _accentA, 0.16), 0x14)),
+                RingStrokeBrush = new SolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)),
+                OrbitStrokeBrush = new SolidColorBrush(Color.FromArgb(0x00, 0x00, 0x00, 0x00)),
+                OrbitFillBrush = new SolidColorBrush(Color.FromArgb(0x00, 0x00, 0x00, 0x00)),
                 CoreSurfaceBrush = coreSurfaceBrush,
-                CoreStrokeBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.Border, _accentA, 0.20), 0xC8)),
-                CoreAccentBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.HighlightA, _accentB, 0.36), 0x96)),
+                CoreStrokeBrush = new SolidColorBrush(Color.FromArgb(0x82, 0xFF, 0xFF, 0xFF)),
+                CoreAccentBrush = new SolidColorBrush(WithAlpha(boldTileColors[1], 0x96)),
                 ButtonSurfaceBrush = buttonSurfaceBrush,
                 ButtonHoverBrush = buttonHoverBrush,
                 ButtonPressedBrush = buttonPressedBrush,
                 ButtonStrokeBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.Border, tokens.Label, 0.06), 0xB6)),
                 ButtonGlowBrush = new SolidColorBrush(WithAlpha(_accentA, 0x22)),
                 ButtonIconHostBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.BackgroundOuter, tokens.BackgroundInner, 0.18), 0x68)),
-                ButtonLabelBrush = new SolidColorBrush(WithAlpha(tokens.Label, 0xFA)),
-                ButtonLabelPlateBrush = new SolidColorBrush(WithAlpha(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), 0xDC)),
-                ButtonCategoryBrush = new SolidColorBrush(WithAlpha(BlendRgb(tokens.Label, _accentB, 0.22), 0xC6)),
-                IconBrush = new SolidColorBrush(_currentThemeIconColor),
-                CenterTextBrush = new SolidColorBrush(WithAlpha(tokens.Label, 0xEA)),
+                ButtonLabelBrush = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)),
+                ButtonLabelPlateBrush = new SolidColorBrush(Color.FromArgb(0xE8, 0x04, 0x06, 0x0D)),
+                ButtonCategoryBrush = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
+                IconBrush = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)),
+                CenterTextBrush = new SolidColorBrush(Color.FromArgb(0xEA, 0xFF, 0xFF, 0xFF)),
                 AccentChipBrush = new SolidColorBrush(WithAlpha(_accentA, 0xC8)),
                 AccentSmearBrush = accentSmearBrush,
+                AccentSmearSoftBrush = accentSmearSoftBrush,
+                ButtonAccentColors = boldTileColors,
                 AccentAColor = _accentA,
                 NotificationAccentColor = tokens.NotificationAccent,
                 TextFontFamily = new FontFamily(tokens.FontFamily),
@@ -1172,6 +1295,15 @@ namespace TopToolbar
         private void OnRootKeyDown(object sender, KeyRoutedEventArgs e)
         {
             if (e.Key == VirtualKey.Escape && _isRadialVisible)
+            {
+                HideRadialMenu();
+                e.Handled = true;
+            }
+        }
+
+        private void OnRadialCanvasPointerPressed(object sender, PointerRoutedEventArgs e)
+        {
+            if (_isRadialVisible && ReferenceEquals(e.OriginalSource, RadialCanvas))
             {
                 HideRadialMenu();
                 e.Handled = true;

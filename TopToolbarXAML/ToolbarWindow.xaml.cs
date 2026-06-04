@@ -147,8 +147,14 @@ namespace TopToolbar
             this.SystemBackdrop = new WinUIEx.TransparentTintBackdrop(
                 Windows.UI.Color.FromArgb(0, 0, 0, 0));
 
-            // Apply styles immediately after activation as backup
-            this.Activated += (s, e) => MakeTopMost();
+            // Apply styles immediately after activation as backup.
+            this.Activated += (s, e) =>
+            {
+                if (e.WindowActivationState != WindowActivationState.Deactivated)
+                {
+                    MakeTopMost();
+                }
+            };
 
             StartMonitoring();
             StartWatchingConfig();
@@ -493,6 +499,17 @@ namespace TopToolbar
                 });
             };
             _settingsWindow.Activate();
+        }
+
+        private void CloseSettingsWindow()
+        {
+            if (_settingsWindow == null)
+            {
+                return;
+            }
+
+            var settingsWindow = _settingsWindow;
+            settingsWindow.Close();
         }
     }
 }
