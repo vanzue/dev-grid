@@ -103,8 +103,8 @@ namespace TopToolbar
                 _leftPaneColumnCache ??= GetLeftPaneColumn();
                 if (_leftPaneColumnCache != null)
                 {
-                    // Keep navigation pane width stable so Groups/Workspaces headers and actions remain visible.
-                    _leftPaneColumnCache.Width = new GridLength(340);
+                    // Keep navigation pane width stable while switching settings sections.
+                    _leftPaneColumnCache.Width = new GridLength(292);
                 }
             }
         }

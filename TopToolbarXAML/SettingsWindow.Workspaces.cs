@@ -898,9 +898,7 @@ namespace TopToolbar
                 var workspaceChoices = choices
                     .Where(choice => !string.Equals(choice.Kind, "agent", StringComparison.OrdinalIgnoreCase))
                     .ToList();
-                var agentChoices = choices
-                    .Where(choice => string.Equals(choice.Kind, "agent", StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+                var agentChoices = new List<TemplateChoice>();
 
                 await RunOnUiThreadAsync(() =>
                 {
@@ -914,29 +912,15 @@ namespace TopToolbar
                         previousSelection != null &&
                         string.Equals(choice.Name, previousSelection.Name, StringComparison.OrdinalIgnoreCase))
                         ?? workspaceChoices.FirstOrDefault();
-                    var agentSelection = agentChoices.FirstOrDefault(choice =>
-                        previousSelection != null &&
-                        string.Equals(choice.Name, previousSelection.Name, StringComparison.OrdinalIgnoreCase));
-
                     if (workspaceSelection != null)
                     {
                         WorkspaceTemplatesList.SelectedItem = workspaceSelection;
                         AgentTemplatesList.SelectedItem = null;
                     }
-                    else if (agentSelection != null)
-                    {
-                        WorkspaceTemplatesList.SelectedItem = null;
-                        AgentTemplatesList.SelectedItem = agentSelection;
-                    }
                     else if (workspaceChoices.Count > 0)
                     {
                         WorkspaceTemplatesList.SelectedIndex = 0;
                         AgentTemplatesList.SelectedItem = null;
-                    }
-                    else if (agentChoices.Count > 0)
-                    {
-                        WorkspaceTemplatesList.SelectedItem = null;
-                        AgentTemplatesList.SelectedIndex = 0;
                     }
                     else
                     {

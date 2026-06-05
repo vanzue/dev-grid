@@ -33,6 +33,33 @@
             <x:Double x:Key="SpacingL">20</x:Double>
             <!-- Standardized width for single-line text inputs to ensure consistent visual rhythm -->
             <x:Double x:Key="StandardInputWidth">360</x:Double>
+            <LinearGradientBrush x:Key="SettingsAccentGradientBrush" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#FF4F8BFF" Offset="0"/>
+                <GradientStop Color="#FF7C4DFF" Offset="1"/>
+            </LinearGradientBrush>
+            <SolidColorBrush x:Key="SettingsQuietCardBrush" Color="#10FFFFFF"/>
+            <SolidColorBrush x:Key="SettingsQuietStrokeBrush" Color="#24FFFFFF"/>
+            <Style x:Key="SettingsPageTitleStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="26"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="TextWrapping" Value="NoWrap"/>
+            </Style>
+            <Style x:Key="SettingsPageSubtitleStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="13"/>
+                <Setter Property="Opacity" Value="0.68"/>
+                <Setter Property="TextWrapping" Value="WrapWholeWords"/>
+            </Style>
+            <Style x:Key="SettingsSectionLabelStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="Opacity" Value="0.62"/>
+                <Setter Property="CharacterSpacing" Value="48"/>
+            </Style>
+            <Style x:Key="SettingsPillButtonStyle" TargetType="Button">
+                <Setter Property="CornerRadius" Value="9"/>
+                <Setter Property="Padding" Value="14,7"/>
+                <Setter Property="MinHeight" Value="34"/>
+            </Style>
             <!-- Reusable style for standard single-line TextBox fields -->
             <Style x:Key="StandardTextBoxStyle"
                     TargetType="TextBox">
@@ -40,6 +67,8 @@
                         Value="Left"/>
                 <Setter Property="Width"
                         Value="{StaticResource StandardInputWidth}"/>
+                <Setter Property="CornerRadius"
+                        Value="8"/>
             </Style>
 
 
@@ -212,9 +241,9 @@
         </Grid.RowDefinitions>
 
         <Grid x:Name="AppTitleBar"
-                Height="48"
+                Height="56"
                 Background="Transparent"
-                Padding="12,0,0,0">
+                Padding="18,0,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
@@ -225,12 +254,13 @@
                     Spacing="12">
                 <Border Width="32"
                         Height="32"
-                        CornerRadius="8"
-                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                        CornerRadius="10"
+                        Background="{StaticResource SettingsAccentGradientBrush}"
                         VerticalAlignment="Center">
                     <FontIcon FontFamily="Segoe MDL2 Assets"
-                            Glyph="&#xE713;"
+                            Glyph="&#xE8A7;"
                             FontSize="16"
+                            Foreground="White"
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center"/>
                 </Border>
@@ -238,7 +268,10 @@
                         VerticalAlignment="Center">
                     <TextBlock Text="Dev Grid Settings"
                             FontSize="14"
-                            FontWeight="Normal"/>
+                            FontWeight="SemiBold"/>
+                    <TextBlock Text="Workspaces, templates, and launch behavior"
+                            FontSize="11"
+                            Opacity="0.62"/>
                 </StackPanel>
             </StackPanel>
         </Grid>
@@ -247,19 +280,22 @@
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="LeftPaneColumn"
-                        Width="340"/>
-                <ColumnDefinition Width="8"/>
+                        Width="292"/>
+                <ColumnDefinition Width="12"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
             <!-- Left pane: clear navigation sections -->
             <Border Grid.Column="0"
                     Background="{ThemeResource LayerOnAcrylicFillColorDefaultBrush}"
-                    Padding="18,14,16,18"
-                    CornerRadius="14"
-                    Margin="8,8,0,12">
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    Padding="18,18,16,18"
+                    CornerRadius="18"
+                    Margin="16,10,0,18">
                 <Grid RowSpacing="10">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -268,22 +304,37 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
+                    <StackPanel Grid.Row="0"
+                                Spacing="4"
+                                Margin="2,0,2,8">
+                        <TextBlock Text="SETTINGS"
+                                  Style="{StaticResource SettingsSectionLabelStyle}"/>
+                        <TextBlock Text="Keep the surface focused: only workspace behavior and templates live here."
+                                  Style="{StaticResource SettingsPageSubtitleStyle}"/>
+                    </StackPanel>
+
                     <!-- Fixed General item -->
-                    <ListViewItem Grid.Row="0"
+                    <ListViewItem Grid.Row="1"
                                   x:Name="GeneralItem"
                                   IsSelected="{x:Bind ViewModel.IsGeneralSelected, Mode=TwoWay}"
                                   Tapped="OnGeneralItemTapped"
                                   Style="{StaticResource ToolbarListItemStyle}"
                                   Padding="4,6">
-                        <Grid ColumnSpacing="8" Padding="6,0,4,0">
+                        <Grid ColumnSpacing="10" Padding="6,2,4,2">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <FontIcon FontFamily="Segoe MDL2 Assets"
-                                      Glyph="&#xE713;"
-                                      FontSize="14"
-                                      VerticalAlignment="Center"/>
+                            <Border Width="28"
+                                    Height="28"
+                                    CornerRadius="8"
+                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                                <FontIcon FontFamily="Segoe MDL2 Assets"
+                                         Glyph="&#xE713;"
+                                         FontSize="14"
+                                         VerticalAlignment="Center"
+                                         HorizontalAlignment="Center"/>
+                            </Border>
                             <TextBlock Grid.Column="1"
                                        Text="General"
                                        FontWeight="Normal"
@@ -291,21 +342,27 @@
                         </Grid>
                     </ListViewItem>
 
-                    <ListViewItem Grid.Row="1"
+                    <ListViewItem Grid.Row="2"
                                   x:Name="TemplatesItem"
                                   IsSelected="{x:Bind ViewModel.IsTemplatesSelected, Mode=TwoWay}"
                                   Tapped="OnTemplatesItemTapped"
                                   Style="{StaticResource ToolbarListItemStyle}"
                                   Padding="4,6">
-                        <Grid ColumnSpacing="8" Padding="6,0,4,0">
+                        <Grid ColumnSpacing="10" Padding="6,2,4,2">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <FontIcon FontFamily="Segoe MDL2 Assets"
-                                      Glyph="&#xE8D2;"
-                                      FontSize="14"
-                                      VerticalAlignment="Center"/>
+                            <Border Width="28"
+                                    Height="28"
+                                    CornerRadius="8"
+                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                                <FontIcon FontFamily="Segoe MDL2 Assets"
+                                         Glyph="&#xE8D2;"
+                                         FontSize="14"
+                                         VerticalAlignment="Center"
+                                         HorizontalAlignment="Center"/>
+                            </Border>
                             <TextBlock Grid.Column="1"
                                        Text="Templates"
                                        FontWeight="Normal"
@@ -314,7 +371,7 @@
                     </ListViewItem>
 
                     <!-- Groups header with add/remove -->
-                    <Grid Grid.Row="2"
+                    <Grid Grid.Row="3"
                           Margin="0,8,0,2"
                           ColumnSpacing="8"
                           Visibility="Collapsed">
@@ -349,7 +406,7 @@
                                     IsEnabled="{x:Bind ViewModel.CanRemoveSelectedGroup, Mode=OneWay}"/>
                         </StackPanel>
                     </Grid>
-                    <ListView Grid.Row="3"
+                    <ListView Grid.Row="4"
                               x:Name="GroupsList"
                               ItemsSource="{x:Bind ViewModel.Groups, Mode=OneWay}"
                               SelectedItem="{x:Bind ViewModel.SelectedGroup, Mode=TwoWay}"
@@ -409,7 +466,7 @@
                     </ListView>
 
                     <!-- Workspaces header/list are hidden in template-only settings mode -->
-                    <Grid Grid.Row="4"
+                    <Grid Grid.Row="5"
                           Margin="0,8,0,2"
                           ColumnSpacing="8"
                           Visibility="Collapsed">
@@ -443,7 +500,7 @@
                                     IsEnabled="{x:Bind ViewModel.HasSelectedWorkspace, Mode=OneWay}"/>
                         </StackPanel>
                     </Grid>
-                    <ListView Grid.Row="5"
+                    <ListView Grid.Row="6"
                               x:Name="WorkspacesList"
                               ItemsSource="{x:Bind ViewModel.WorkspaceButtons, Mode=OneWay}"
                               SelectedItem="{x:Bind ViewModel.SelectedWorkspace, Mode=TwoWay}"
@@ -485,29 +542,57 @@
                 </Grid>
             </Border>
 
-            <!-- Divider line -->
-            <Border Grid.Column="1"
-                    Background="{ThemeResource CardStrokeColorDefaultBrush}"
-                    Opacity="0.4"/>
+            <!-- Divider line intentionally omitted; cards provide separation. -->
 
             <!-- Right pane: buttons + button details -->
             <ScrollViewer Grid.Column="2"
                     Padding="0"
                     VerticalScrollBarVisibility="Auto">
                 <Border Background="{ThemeResource LayerOnAcrylicFillColorDefaultBrush}"
-                        CornerRadius="18"
-                        Padding="40,28,44,52"
-                        Margin="4,16,16,20">
-                    <StackPanel Spacing="26">
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="22"
+                        Padding="34,30,38,48"
+                        Margin="0,10,18,18">
+                    <StackPanel Spacing="28">
                         <!-- General settings (only when General is selected) -->
-                        <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsGeneralSelected, Mode=OneWay}">
-                            <TextBlock Text="General"
-                                       FontSize="18"
-                                       FontWeight="SemiBold"/>
+                        <StackPanel Spacing="18" Visibility="{x:Bind ViewModel.IsGeneralSelected, Mode=OneWay}">
+                            <Grid ColumnSpacing="16"
+                                  Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Width="48"
+                                        Height="48"
+                                        CornerRadius="14"
+                                        Background="{StaticResource SettingsAccentGradientBrush}"
+                                        VerticalAlignment="Top">
+                                    <FontIcon FontFamily="Segoe MDL2 Assets"
+                                              Glyph="&#xE713;"
+                                              Foreground="White"
+                                              FontSize="21"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel Grid.Column="1"
+                                            Spacing="5"
+                                            VerticalAlignment="Center">
+                                    <TextBlock Text="General"
+                                               Style="{StaticResource SettingsPageTitleStyle}"/>
+                                    <TextBlock Text="Choose how Dev Grid appears, how it is invoked, and which visual theme it uses."
+                                               Style="{StaticResource SettingsPageSubtitleStyle}"/>
+                                </StackPanel>
+                            </Grid>
 
                             <tkcontrols:SettingsCard x:Name="StartupSettingsCard"
-                                                    Header="Run at startup"
                                                     Description="{x:Bind ViewModel.StartupStatusText, Mode=OneWay}">
+                                <tkcontrols:SettingsCard.Header>
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE7C3;" FontSize="15"/>
+                                        <TextBlock Text="Run at startup" FontWeight="SemiBold"/>
+                                    </StackPanel>
+                                </tkcontrols:SettingsCard.Header>
                                 <ToggleSwitch x:Name="StartupToggle"
                                               IsOn="{x:Bind ViewModel.IsStartupEnabled, Mode=OneWay}"
                                               IsEnabled="{x:Bind ViewModel.IsStartupAvailable, Mode=OneWay}"
@@ -522,9 +607,12 @@
                                 <StackPanel Spacing="10"
                                             HorizontalAlignment="Stretch">
                                     <StackPanel Spacing="2">
-                                        <TextBlock Text="Top bar appearance"
-                                                   FontSize="13"
-                                                   FontWeight="SemiBold"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="10">
+                                            <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE7F4;" FontSize="15"/>
+                                            <TextBlock Text="Invocation"
+                                                       FontSize="13"
+                                                       FontWeight="SemiBold"/>
+                                        </StackPanel>
                                         <TextBlock Text="Choose how Dev Grid appears when invoked."
                                                    Opacity="0.72"/>
                                     </StackPanel>
@@ -540,19 +628,29 @@
                                             CornerRadius="12"
                                             Padding="2">
                                         <StackPanel Spacing="0">
-                                            <tkcontrols:SettingsCard Header="Mode"
-                                                                    ContentAlignment="Right">
+                                            <tkcontrols:SettingsCard ContentAlignment="Right">
+                                                <tkcontrols:SettingsCard.Header>
+                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE8A7;" FontSize="14"/>
+                                                        <TextBlock Text="Mode"/>
+                                                    </StackPanel>
+                                                </tkcontrols:SettingsCard.Header>
                                                 <ComboBox Width="260"
                                                           SelectedIndex="{x:Bind ViewModel.DisplayModeIndex, Mode=TwoWay}"
                                                           HorizontalAlignment="Right">
                                                     <ComboBoxItem Content="Top bar (screen edge trigger)"/>
-                                                    <ComboBoxItem Content="Radial menu (Alt+Space)"/>
+                                                    <ComboBoxItem Content="Radial menu (Ctrl+Shift+Space)"/>
                                                 </ComboBox>
                                             </tkcontrols:SettingsCard>
 
-                                            <tkcontrols:SettingsCard Header="Require Ctrl"
-                                                                    Description="Only trigger when Ctrl is held in Top bar mode."
+                                            <tkcontrols:SettingsCard Description="Only trigger when Ctrl is held in Top bar mode."
                                                                     ContentAlignment="Right">
+                                                <tkcontrols:SettingsCard.Header>
+                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE765;" FontSize="14"/>
+                                                        <TextBlock Text="Require Ctrl"/>
+                                                    </StackPanel>
+                                                </tkcontrols:SettingsCard.Header>
                                                 <ToggleSwitch HorizontalAlignment="Right"
                                                               IsOn="{x:Bind ViewModel.RequireCtrlForTopBarTrigger, Mode=TwoWay}"
                                                               IsEnabled="{x:Bind ViewModel.IsTopBarModeSelected, Mode=OneWay}"
@@ -564,8 +662,13 @@
                                 </StackPanel>
                             </Border>
 
-                            <tkcontrols:SettingsCard Header="Theme"
-                                                    Description="Choose a built-in toolbar visual style.">
+                            <tkcontrols:SettingsCard Description="Choose a built-in toolbar visual style.">
+                                <tkcontrols:SettingsCard.Header>
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE790;" FontSize="15"/>
+                                        <TextBlock Text="Theme" FontWeight="SemiBold"/>
+                                    </StackPanel>
+                                </tkcontrols:SettingsCard.Header>
                                 <ComboBox SelectedIndex="{x:Bind ViewModel.ThemeIndex, Mode=TwoWay}">
                                     <ComboBoxItem Content="Sand Mist"/>
                                     <ComboBoxItem Content="Glacier Blue"/>
@@ -583,20 +686,44 @@
 
                         </StackPanel>
 
-                        <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.IsTemplatesSelected, Mode=OneWay}">
-                            <TextBlock Text="Templates"
-                                       FontSize="18"
-                                       FontWeight="SemiBold"/>
-                            <TextBlock Text="Agent workspace templates. Snapshot is for ad-hoc desktop capture."
-                                       Opacity="0.72"/>
+                        <StackPanel Spacing="18" Visibility="{x:Bind ViewModel.IsTemplatesSelected, Mode=OneWay}">
+                            <Grid ColumnSpacing="16"
+                                  Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Width="48"
+                                        Height="48"
+                                        CornerRadius="14"
+                                        Background="{StaticResource SettingsAccentGradientBrush}"
+                                        VerticalAlignment="Top">
+                                    <FontIcon FontFamily="Segoe MDL2 Assets"
+                                              Glyph="&#xE8D2;"
+                                              Foreground="White"
+                                              FontSize="21"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel Grid.Column="1"
+                                            Spacing="5"
+                                            VerticalAlignment="Center">
+                                    <TextBlock Text="Templates"
+                                               Style="{StaticResource SettingsPageTitleStyle}"/>
+                                    <TextBlock Text="Design reusable workspace blueprints. Snapshot stays outside Settings for quick ad-hoc capture."
+                                               Style="{StaticResource SettingsPageSubtitleStyle}"/>
+                                </StackPanel>
+                            </Grid>
 
                             <StackPanel Orientation="Horizontal"
-                                        Spacing="8">
+                                        Spacing="10">
                                 <Button Content="Create template"
+                                        Style="{StaticResource AccentButtonStyle}"
                                         HorizontalAlignment="Left"
                                         Click="OnCreateWorkspaceTemplate"/>
                                 <Button x:Name="DeleteSelectedTemplateButton"
-                                        Content="Delete selected"
+                                        Content="Delete"
+                                        Style="{StaticResource SettingsPillButtonStyle}"
                                         HorizontalAlignment="Left"
                                         IsEnabled="False"
                                         Click="OnDeleteSelectedTemplate"/>
@@ -612,18 +739,25 @@
                                         Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                         BorderThickness="1"
-                                        CornerRadius="12"
-                                        Padding="12">
-                                    <StackPanel Spacing="8">
-                                        <TextBlock Text="Template library"
-                                                   FontSize="14"
-                                                   FontWeight="SemiBold"/>
-                                        <TextBlock Text="Workspace templates"
-                                                   Opacity="0.72"/>
+                                        CornerRadius="16"
+                                        Padding="14">
+                                    <StackPanel Spacing="10">
+                                        <StackPanel Spacing="3">
+                                            <StackPanel Orientation="Horizontal" Spacing="9">
+                                                <FontIcon FontFamily="Segoe MDL2 Assets"
+                                                          Glyph="&#xE8F1;"
+                                                          FontSize="15"/>
+                                                <TextBlock Text="Template library"
+                                                           FontSize="14"
+                                                           FontWeight="SemiBold"/>
+                                            </StackPanel>
+                                            <TextBlock Text="Workspace templates"
+                                                       Opacity="0.68"/>
+                                        </StackPanel>
                                         <ListView x:Name="WorkspaceTemplatesList"
                                                   SelectionMode="Single"
-                                                  MinHeight="190"
-                                                  MaxHeight="220"
+                                                  MinHeight="410"
+                                                  MaxHeight="520"
                                                   SelectionChanged="OnWorkspaceTemplatesListSelectionChanged"
                                                   Margin="0,2,0,0">
                                             <ListView.ItemTemplate>
@@ -646,13 +780,15 @@
 
                                         <TextBlock Text="Agent templates"
                                                    Opacity="0.72"
-                                                   Margin="0,8,0,0"/>
+                                                   Margin="0,8,0,0"
+                                                   Visibility="Collapsed"/>
                                         <ListView x:Name="AgentTemplatesList"
                                                   SelectionMode="Single"
                                                   MinHeight="170"
                                                   MaxHeight="200"
                                                   SelectionChanged="OnAgentTemplatesListSelectionChanged"
-                                                  Margin="0,2,0,0">
+                                                  Margin="0,2,0,0"
+                                                  Visibility="Collapsed">
                                             <ListView.ItemTemplate>
                                                 <DataTemplate>
                                                     <StackPanel Spacing="2" Padding="4,4,4,4">
@@ -683,15 +819,20 @@
                                         Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                         BorderThickness="1"
-                                        CornerRadius="12"
-                                        Padding="14">
+                                        CornerRadius="16"
+                                        Padding="18">
                                     <ScrollViewer VerticalScrollBarVisibility="Auto"
                                                   HorizontalScrollBarVisibility="Disabled"
                                                   MaxHeight="620">
-                                        <StackPanel Spacing="12">
-                                            <TextBlock Text="Template configuration"
-                                                       FontSize="14"
-                                                       FontWeight="SemiBold"/>
+                                        <StackPanel Spacing="14">
+                                            <StackPanel Orientation="Horizontal" Spacing="9">
+                                                <FontIcon FontFamily="Segoe MDL2 Assets"
+                                                          Glyph="&#xE70F;"
+                                                          FontSize="15"/>
+                                                <TextBlock Text="Template configuration"
+                                                           FontSize="14"
+                                                           FontWeight="SemiBold"/>
+                                            </StackPanel>
                                             <TextBlock x:Name="TemplateEditorHintText"
                                                        Text="Select a template from the left list."
                                                        Opacity="0.72"
@@ -714,9 +855,11 @@
                                                      MinHeight="64"/>
 
                                             <TextBlock Text="Template type"
-                                                       Opacity="0.72"/>
+                                                       Opacity="0.72"
+                                                       Visibility="Collapsed"/>
                                             <ComboBox x:Name="TemplateKindComboBox"
-                                                      SelectionChanged="OnTemplateKindSelectionChanged">
+                                                      SelectionChanged="OnTemplateKindSelectionChanged"
+                                                      Visibility="Collapsed">
                                                 <ComboBoxItem Content="workspace"/>
                                                 <ComboBoxItem Content="agent"/>
                                             </ComboBox>
@@ -842,6 +985,7 @@
 
                                             <Button x:Name="SaveSelectedTemplateButton"
                                                     Content="Save template"
+                                                    Style="{StaticResource AccentButtonStyle}"
                                                     HorizontalAlignment="Left"
                                                     IsEnabled="False"
                                                     Click="OnSaveSelectedTemplate"/>
