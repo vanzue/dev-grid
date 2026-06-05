@@ -296,6 +296,31 @@ namespace TopToolbar
             }
         }
 
+        private void OnToolbarButtonRightTapped(object sender, RightTappedRoutedEventArgs e)
+        {
+            if (sender is not FrameworkElement fe ||
+                fe.Tag is not ToolbarButtonItem item ||
+                !TryGetRuntimeWorkspaceId(item.Button, out var workspaceId))
+            {
+                return;
+            }
+
+            e.Handled = true;
+
+            var workspaceName = item.Button.DisplayName;
+            var menu = new MenuFlyout();
+            var removeItem = new MenuFlyoutItem
+            {
+                Text = "Remove workspace",
+            };
+            removeItem.Click += async (_, _) =>
+            {
+                await RemoveRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
+            };
+            menu.Items.Add(removeItem);
+            menu.ShowAt(fe, e.GetPosition(fe));
+        }
+
         private void OnToolbarScrollViewerPointerWheelChanged(object sender, PointerRoutedEventArgs e)
         {
             if (sender is not ScrollViewer scrollViewer || e == null)

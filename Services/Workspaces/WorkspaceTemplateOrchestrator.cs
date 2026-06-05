@@ -313,7 +313,7 @@ namespace TopToolbar.Services.Workspaces
 
             if (diagnostics.Ok)
             {
-                var hasWarnings = diagnostics.Errors != null && diagnostics.Errors.Count > 0;
+                var hasWarnings = diagnostics.Warnings != null && diagnostics.Warnings.Count > 0;
                 return new SwitchResult(true, hasWarnings ? "Workspace switched with warnings." : "Workspace switched.", diagnostics.WorkspaceId, diagnostics);
             }
 

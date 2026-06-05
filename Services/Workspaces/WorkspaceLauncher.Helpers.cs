@@ -605,6 +605,9 @@ namespace TopToolbar.Services.Workspaces
             var errors = result.Errors != null && result.Errors.Count > 0
                 ? string.Join(" | ", result.Errors)
                 : "none";
+            var warnings = result.Warnings != null && result.Warnings.Count > 0
+                ? string.Join(" | ", result.Warnings)
+                : "none";
             var stageDurations = result.StageDurationsMs != null && result.StageDurationsMs.Count > 0
                 ? string.Join(", ", result.StageDurationsMs.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase).Select(kvp => $"{kvp.Key}:{kvp.Value}ms"))
                 : "none";
@@ -612,7 +615,7 @@ namespace TopToolbar.Services.Workspaces
             LogPerf(
                 "WorkspaceRuntime: Switch summary " +
                 $"ok={result.Ok}, workspaceId={result.WorkspaceId}, claimed={result.ClaimedCount}, launched={result.LaunchedCount}, arranged={result.ArrangedCount}, minimized={result.MinimizedCount}, " +
-                $"focusedRole={result.FocusedRole}, focusedHwnd={result.FocusedHwnd}, durationMs={result.DurationMs}, stageDurations={stageDurations}, errors={errors}");
+                $"focusedRole={result.FocusedRole}, focusedHwnd={result.FocusedHwnd}, durationMs={result.DurationMs}, stageDurations={stageDurations}, errors={errors}, warnings={warnings}");
         }
     }
 }

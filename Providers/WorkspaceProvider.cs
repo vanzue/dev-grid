@@ -588,13 +588,7 @@ namespace TopToolbar.Providers
 
             try
             {
-                var exitCode = await RunLauncherAsync(workspaceId, cancellationToken).ConfigureAwait(false);
-                var ok = exitCode == 0;
-                return new ActionResult
-                {
-                    Ok = ok,
-                    Message = ok ? string.Empty : $"Launcher exit code {exitCode}.",
-                };
+                return await RunLauncherAsync(workspaceId, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -610,14 +604,24 @@ namespace TopToolbar.Providers
             }
         }
 
-        private async Task<int> RunLauncherAsync(string workspaceId, CancellationToken cancellationToken)
+        private async Task<ActionResult> RunLauncherAsync(string workspaceId, CancellationToken cancellationToken)
         {
             try
             {
-                var success = await _workspacesService
-                    .LaunchWorkspaceAsync(workspaceId, cancellationToken, progress: null, allowLaunchMissingWindows: false)
+                var diagnostics = await _workspacesService
+                    .LaunchWorkspaceDetailedAsync(workspaceId, cancellationToken, allowLaunchMissingWindows: false)
                     .ConfigureAwait(false);
-                return success ? 0 : 1;
+                var messages = diagnostics?.Ok == true
+                    ? diagnostics.Warnings
+                    : diagnostics?.Errors;
+                var hasMessages = messages != null && messages.Count > 0;
+                var message = hasMessages ? string.Join("; ", messages) : string.Empty;
+
+                return new ActionResult
+                {
+                    Ok = diagnostics?.Ok == true,
+                    Message = message,
+                };
             }
             catch (OperationCanceledException)
             {
@@ -626,7 +630,11 @@ namespace TopToolbar.Providers
             catch (Exception ex)
             {
                 AppLogger.LogWarning($"WorkspaceProvider: failed to launch workspace '{workspaceId}' - {ex.Message}");
-                return 1;
+                return new ActionResult
+                {
+                    Ok = false,
+                    Message = ex.Message,
+                };
             }
         }
 

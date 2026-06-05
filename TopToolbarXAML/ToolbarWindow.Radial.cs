@@ -24,7 +24,8 @@ namespace TopToolbar
     public sealed partial class ToolbarWindow
     {
         private const int RadialHotKeyId = 0x5452;
-        private const uint ModAlt = 0x0001;
+        private const uint ModControl = 0x0002;
+        private const uint ModShift = 0x0004;
         private const uint ModNoRepeat = 0x4000;
         private const uint VkSpace = 0x20;
 
@@ -34,7 +35,7 @@ namespace TopToolbar
         private bool _isShowingRadial;
         private System.Timers.Timer _radialHotKeyPollTimer;
         private bool _radialFallbackPolling;
-        private bool _lastAltSpaceDown;
+        private bool _lastRadialHotKeyComboDown;
         private bool _lastEscapeDown;
         private bool _lastMouseDown;
         private long _lastRadialHotKeyTriggerTick;
@@ -175,15 +176,15 @@ namespace TopToolbar
                 return;
             }
 
-            var ok = RegisterHotKey(_hwnd, RadialHotKeyId, ModAlt | ModNoRepeat, VkSpace);
+            var ok = RegisterHotKey(_hwnd, RadialHotKeyId, ModControl | ModShift | ModNoRepeat, VkSpace);
             if (!ok)
             {
-                AppLogger.LogWarning("RadialMenu: failed to register Alt+Space hotkey.");
+                AppLogger.LogWarning("RadialMenu: failed to register Ctrl+Shift+Space hotkey.");
                 return;
             }
 
             _radialHotKeyRegistered = true;
-            AppLogger.LogInfo("RadialMenu: Alt+Space hotkey registered.");
+            AppLogger.LogInfo("RadialMenu: Ctrl+Shift+Space hotkey registered.");
         }
 
         private void UnregisterRadialHotKey()
@@ -234,16 +235,16 @@ namespace TopToolbar
 
             _radialHotKeyPollTimer.Elapsed -= OnRadialHotKeyPollElapsed;
             _radialHotKeyPollTimer.Elapsed += OnRadialHotKeyPollElapsed;
-            _lastAltSpaceDown = false;
+            _lastRadialHotKeyComboDown = false;
             _radialFallbackPolling = true;
             _radialHotKeyPollTimer.Start();
-            AppLogger.LogInfo("RadialMenu: Alt+Space polling enabled.");
+            AppLogger.LogInfo("RadialMenu: Ctrl+Shift+Space polling enabled.");
         }
 
         private void StopRadialHotKeyFallbackPolling(bool disposeTimer)
         {
             _radialFallbackPolling = false;
-            _lastAltSpaceDown = false;
+            _lastRadialHotKeyComboDown = false;
             _lastEscapeDown = false;
             _lastMouseDown = false;
 
@@ -269,18 +270,20 @@ namespace TopToolbar
                 return;
             }
 
-            const int VkMenu = 0x12;
+            const int VkControl = 0x11;
+            const int VkShift = 0x10;
             const int VkSpaceInt = 0x20;
-            var altDown = (GetAsyncKeyState(VkMenu) & 0x8000) != 0;
+            var controlDown = (GetAsyncKeyState(VkControl) & 0x8000) != 0;
+            var shiftDown = (GetAsyncKeyState(VkShift) & 0x8000) != 0;
             var spaceDown = (GetAsyncKeyState(VkSpaceInt) & 0x8000) != 0;
-            var comboDown = altDown && spaceDown;
+            var comboDown = controlDown && shiftDown && spaceDown;
 
-            if (comboDown && !_lastAltSpaceDown)
+            if (comboDown && !_lastRadialHotKeyComboDown)
             {
                 TryEnqueueRadialHotKeyPress();
             }
 
-            _lastAltSpaceDown = comboDown;
+            _lastRadialHotKeyComboDown = comboDown;
 
             const int VkEscape = 0x1B;
             var escapeDown = (GetAsyncKeyState(VkEscape) & 0x8000) != 0;
@@ -1122,6 +1125,29 @@ namespace TopToolbar
 
             button.Content = root;
             button.Click += OnRadialButtonClick;
+            if (entry.Kind == RadialEntryKind.ToolbarButton &&
+                entry.Item?.Button != null &&
+                TryGetRuntimeWorkspaceId(entry.Item.Button, out var workspaceId))
+            {
+                var workspaceName = entry.Title;
+                button.RightTapped += (_, e) =>
+                {
+                    e.Handled = true;
+                    var menu = new MenuFlyout();
+                    var removeItem = new MenuFlyoutItem
+                    {
+                        Text = "Remove workspace",
+                    };
+                    removeItem.Click += async (_, __) =>
+                    {
+                        HideRadialMenu();
+                        await RemoveRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
+                    };
+                    menu.Items.Add(removeItem);
+                    menu.ShowAt(button, e.GetPosition(button));
+                };
+            }
+
             return button;
         }
 

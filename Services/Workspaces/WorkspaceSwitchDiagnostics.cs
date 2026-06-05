@@ -41,5 +41,8 @@ namespace TopToolbar.Services.Workspaces
 
         [JsonPropertyName("errors")]
         public List<string> Errors { get; set; } = new();
+
+        [JsonPropertyName("warnings")]
+        public List<string> Warnings { get; set; } = new();
     }
 }

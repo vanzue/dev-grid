@@ -335,9 +335,10 @@ namespace TopToolbar.Services.Workspaces
                         .ToList();
                     var missingPreview = string.Join(", ", missingApps.Take(3));
                     var missingSuffix = missingApps.Count > 3 ? ", ..." : string.Empty;
-                    result.Errors.Add(
+                    result.Warnings.Add(
                         $"launch-incomplete: {successfulApps.Count}/{appCount} window(s) ready; missing={missingApps.Count} [{missingPreview}{missingSuffix}]");
-                    return FinalizeResult(false);
+                    AppLogger.LogWarning(
+                        $"WorkspaceRuntime: workspace '{normalizedWorkspaceId}' has missing windows; continuing with {successfulApps.Count}/{appCount} ready.");
                 }
 
                 // ============================================================
@@ -377,7 +378,7 @@ namespace TopToolbar.Services.Workspaces
                 // Phase 3: Minimize extraneous windows
                 // ============================================================
                 var swPhase3 = Stopwatch.StartNew();
-                if (workspace.MoveExistingWindows)
+                if (workspace.MoveExistingWindows && successfulApps.Count > 0)
                 {
                     if (shouldPreMinimize)
                     {
@@ -390,6 +391,10 @@ namespace TopToolbar.Services.Workspaces
                         result.MinimizedCount = MinimizeExtraneousWindows(workspaceHandles, launchCancellationToken);
                         LogPerf($"WorkspaceRuntime: Phase 3 - MinimizeExtraneousWindows minimized {result.MinimizedCount} window(s)");
                     }
+                }
+                else if (workspace.MoveExistingWindows)
+                {
+                    LogPerf("WorkspaceRuntime: Phase 3 - skipped minimize because no workspace windows were ready.");
                 }
                 swPhase3.Stop();
                 result.StageDurationsMs["minimize"] = swPhase3.ElapsedMilliseconds;

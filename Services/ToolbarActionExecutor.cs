@@ -153,7 +153,14 @@ namespace TopToolbar.Services
                         var successMessage = string.IsNullOrWhiteSpace(message)
                             ? "Workspace ready."
                             : message;
-                        _notificationService?.ShowSuccess(successMessage);
+                        if (string.IsNullOrWhiteSpace(message))
+                        {
+                            _notificationService?.ShowSuccess(successMessage);
+                        }
+                        else
+                        {
+                            _notificationService?.ShowWarning(successMessage);
+                        }
                     }
                 }
             }
