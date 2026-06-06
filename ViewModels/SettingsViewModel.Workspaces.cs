@@ -133,9 +133,9 @@ namespace TopToolbar.ViewModels
             }
 
             var orderedWorkspaceIds = allWorkspaceIds
-                .OrderBy(id => GetTemplateDisplayName(definitionLookup.TryGetValue(id, out var definition) ? definition : null), StringComparer.OrdinalIgnoreCase)
+                .OrderBy(id => GetWorkspaceDisplayTitle(definitionLookup.TryGetValue(id, out var definition) ? definition : null, id), StringComparer.OrdinalIgnoreCase)
                 .ThenByDescending(id => definitionLookup.TryGetValue(id, out var definition) ? definition?.LastLaunchedTime ?? long.MinValue : long.MinValue)
-                .ThenBy(id => GetInstanceSortName(definitionLookup.TryGetValue(id, out var definition) ? definition : null, id), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(id => id, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             foreach (var workspaceId in orderedWorkspaceIds)
@@ -527,70 +527,12 @@ namespace TopToolbar.ViewModels
 
         private static string GetWorkspaceDisplayTitle(WorkspaceDefinition definition, string fallbackId)
         {
-            if (!string.IsNullOrWhiteSpace(definition?.WorkspaceTitle))
-            {
-                return definition.WorkspaceTitle.Trim();
-            }
-
             if (!string.IsNullOrWhiteSpace(definition?.Name))
             {
                 return definition.Name.Trim();
             }
 
             return fallbackId ?? string.Empty;
-        }
-
-        private static string GetTemplateDisplayName(WorkspaceDefinition definition)
-        {
-            if (definition == null)
-            {
-                return "Workspace";
-            }
-
-            if (!string.IsNullOrWhiteSpace(definition.WorkspaceTitle) && !string.IsNullOrWhiteSpace(definition.InstanceName))
-            {
-                var suffix = " · " + definition.InstanceName.Trim();
-                if (definition.WorkspaceTitle.EndsWith(suffix, StringComparison.Ordinal))
-                {
-                    var prefix = definition.WorkspaceTitle[..^suffix.Length].Trim();
-                    if (!string.IsNullOrWhiteSpace(prefix))
-                    {
-                        return prefix;
-                    }
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(definition.TemplateName))
-            {
-                return definition.TemplateName.Trim();
-            }
-
-            if (!string.IsNullOrWhiteSpace(definition.Name))
-            {
-                return definition.Name.Trim();
-            }
-
-            return "Workspace";
-        }
-
-        private static string GetInstanceSortName(WorkspaceDefinition definition, string workspaceId)
-        {
-            if (!string.IsNullOrWhiteSpace(definition?.InstanceName))
-            {
-                return definition.InstanceName.Trim();
-            }
-
-            if (!string.IsNullOrWhiteSpace(definition?.WorkspaceTitle))
-            {
-                return definition.WorkspaceTitle.Trim();
-            }
-
-            if (!string.IsNullOrWhiteSpace(definition?.Name))
-            {
-                return definition.Name.Trim();
-            }
-
-            return workspaceId ?? string.Empty;
         }
     }
 }

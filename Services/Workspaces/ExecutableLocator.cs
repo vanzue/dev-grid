@@ -33,13 +33,6 @@ namespace TopToolbar.Services.Workspaces
         private static readonly KnownApp[] KnownApps =
         {
             new(
-                Id: "copilot",
-                SuggestedRole: "terminal",
-                Description: "GitHub Copilot CLI agent command.",
-                DefaultWorkingDirectory: "{repo}",
-                DefaultArgs: string.Empty,
-                Candidates: new[] { "copilot", "copilot.exe", "github-copilot.exe" }),
-            new(
                 Id: "terminal",
                 SuggestedRole: "terminal",
                 Description: "Windows Terminal.",
@@ -172,7 +165,7 @@ namespace TopToolbar.Services.Workspaces
                 return string.Empty;
             }
 
-            var resolvedByLauncher = AppLauncher.ResolveTemplateExecutable(executable);
+            var resolvedByLauncher = AppLauncher.ResolveExecutableAlias(executable);
             if (IsLaunchable(resolvedByLauncher))
             {
                 return resolvedByLauncher;

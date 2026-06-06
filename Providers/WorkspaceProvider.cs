@@ -228,16 +228,6 @@ namespace TopToolbar.Providers
                     return true;
                 }
 
-                if (!string.Equals(o.TemplateDisplayName ?? string.Empty, n.TemplateDisplayName ?? string.Empty, StringComparison.Ordinal))
-                {
-                    return true;
-                }
-
-                if (!string.Equals(o.InstanceName ?? string.Empty, n.InstanceName ?? string.Empty, StringComparison.Ordinal))
-                {
-                    return true;
-                }
-
                 if (!string.Equals(o.IconSignature ?? string.Empty, n.IconSignature ?? string.Empty, StringComparison.Ordinal))
                 {
                     return true;
@@ -474,16 +464,6 @@ namespace TopToolbar.Providers
                 if (!string.IsNullOrWhiteSpace(workspace.DisplayName))
                 {
                     descriptor.Keywords.Add(workspace.DisplayName);
-                }
-
-                if (!string.IsNullOrWhiteSpace(workspace.TemplateDisplayName))
-                {
-                    descriptor.Keywords.Add(workspace.TemplateDisplayName);
-                }
-
-                if (!string.IsNullOrWhiteSpace(workspace.InstanceName))
-                {
-                    descriptor.Keywords.Add(workspace.InstanceName);
                 }
 
                 descriptor.Keywords.Add(workspace.Id);
@@ -730,10 +710,9 @@ namespace TopToolbar.Providers
                 }
 
                 var hasApps = workspace.Applications != null && workspace.Applications.Count > 0;
-                var hasTemplate = !string.IsNullOrWhiteSpace(workspace.TemplateName);
-                if (!hasApps && !hasTemplate)
+                if (!hasApps)
                 {
-                    // Hide legacy placeholder entries that cannot launch anything.
+                    // Hide entries that cannot launch anything.
                     continue;
                 }
 
@@ -748,8 +727,6 @@ namespace TopToolbar.Providers
                     string.Equals(b.Id, BuildButtonIdInternal(id), StringComparison.OrdinalIgnoreCase));
 
                 var displayName = ResolveDisplayTitle(workspace, id);
-                var templateDisplayName = ResolveTemplateDisplayName(workspace, displayName);
-                var instanceName = ResolveInstanceName(workspace, displayName, id);
                 var iconSignature = BuildIconSignature(button?.Icon);
                 var enabled = button?.Enabled ?? true;
                 var lastLaunchedTime = workspace.LastLaunchedTime ?? long.MinValue;
@@ -758,8 +735,6 @@ namespace TopToolbar.Providers
                 records.Add(new WorkspaceRecord(
                     id,
                     displayName,
-                    templateDisplayName,
-                    instanceName,
                     lastLaunchedTime,
                     icon,
                     iconSignature,
@@ -767,65 +742,17 @@ namespace TopToolbar.Providers
             }
 
             return records
-                .OrderBy(record => record.TemplateDisplayName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(record => record.DisplayName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
                 .ThenByDescending(record => record.LastLaunchedTime)
-                .ThenBy(record => record.InstanceName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(record => record.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
 
         private static string ResolveDisplayTitle(WorkspaceDefinition workspace, string fallbackId)
         {
-            if (!string.IsNullOrWhiteSpace(workspace?.WorkspaceTitle))
-            {
-                return workspace.WorkspaceTitle.Trim();
-            }
-
             if (!string.IsNullOrWhiteSpace(workspace?.Name))
             {
                 return workspace.Name.Trim();
-            }
-
-            return fallbackId ?? string.Empty;
-        }
-
-        private static string ResolveTemplateDisplayName(WorkspaceDefinition workspace, string fallbackDisplayName)
-        {
-            if (workspace == null)
-            {
-                return fallbackDisplayName ?? string.Empty;
-            }
-
-            if (!string.IsNullOrWhiteSpace(workspace.WorkspaceTitle) && !string.IsNullOrWhiteSpace(workspace.InstanceName))
-            {
-                var suffix = " · " + workspace.InstanceName.Trim();
-                if (workspace.WorkspaceTitle.EndsWith(suffix, StringComparison.Ordinal))
-                {
-                    var prefix = workspace.WorkspaceTitle[..^suffix.Length].Trim();
-                    if (!string.IsNullOrWhiteSpace(prefix))
-                    {
-                        return prefix;
-                    }
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(workspace.TemplateName))
-            {
-                return workspace.TemplateName.Trim();
-            }
-
-            return fallbackDisplayName ?? string.Empty;
-        }
-
-        private static string ResolveInstanceName(WorkspaceDefinition workspace, string fallbackDisplayName, string fallbackId)
-        {
-            if (!string.IsNullOrWhiteSpace(workspace?.InstanceName))
-            {
-                return workspace.InstanceName.Trim();
-            }
-
-            if (!string.IsNullOrWhiteSpace(fallbackDisplayName))
-            {
-                return fallbackDisplayName;
             }
 
             return fallbackId ?? string.Empty;
@@ -894,8 +821,6 @@ namespace TopToolbar.Providers
         private sealed record WorkspaceRecord(
             string Id,
             string DisplayName,
-            string TemplateDisplayName,
-            string InstanceName,
             long LastLaunchedTime,
             ProviderIcon Icon,
             string IconSignature,

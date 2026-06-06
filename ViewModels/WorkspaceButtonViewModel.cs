@@ -36,26 +36,7 @@ namespace TopToolbar.ViewModels
         public string WorkspaceId => Definition.Id;
 
         public string DisplayTitle =>
-            !string.IsNullOrWhiteSpace(Definition.WorkspaceTitle)
-                ? Definition.WorkspaceTitle
-                : (!string.IsNullOrWhiteSpace(Name) ? Name : WorkspaceId);
-
-        public string TemplateName =>
-            string.IsNullOrWhiteSpace(Definition.TemplateName) ? "-" : Definition.TemplateName;
-
-        public string InstanceName =>
-            string.IsNullOrWhiteSpace(Definition.InstanceName) ? "-" : Definition.InstanceName;
-
-        public string WorkspaceTitle =>
-            string.IsNullOrWhiteSpace(Definition.WorkspaceTitle) ? DisplayTitle : Definition.WorkspaceTitle;
-
-        public string RepoRoot =>
-            string.IsNullOrWhiteSpace(Definition.RepoRoot) ? "-" : Definition.RepoRoot;
-
-        public string FocusPriorityDisplay =>
-            Definition.FocusPriority == null || Definition.FocusPriority.Count == 0
-                ? "-"
-                : string.Join(", ", Definition.FocusPriority.Where(role => !string.IsNullOrWhiteSpace(role)));
+            !string.IsNullOrWhiteSpace(Name) ? Name : WorkspaceId;
 
         public string LastLaunchedDisplay
         {
@@ -92,15 +73,10 @@ namespace TopToolbar.ViewModels
                     {
                         var trimmed = value.Trim();
                         Definition.Name = trimmed;
-                        if (!string.IsNullOrWhiteSpace(Definition.WorkspaceTitle) || !string.IsNullOrWhiteSpace(Definition.TemplateName))
-                        {
-                            Definition.WorkspaceTitle = trimmed;
-                        }
                     }
 
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(DisplayTitle));
-                    OnPropertyChanged(nameof(WorkspaceTitle));
                 }
             }
         }
@@ -272,11 +248,6 @@ namespace TopToolbar.ViewModels
         public void NotifyMetadataChanged()
         {
             OnPropertyChanged(nameof(DisplayTitle));
-            OnPropertyChanged(nameof(TemplateName));
-            OnPropertyChanged(nameof(InstanceName));
-            OnPropertyChanged(nameof(WorkspaceTitle));
-            OnPropertyChanged(nameof(RepoRoot));
-            OnPropertyChanged(nameof(FocusPriorityDisplay));
             OnPropertyChanged(nameof(LastLaunchedDisplay));
         }
     }

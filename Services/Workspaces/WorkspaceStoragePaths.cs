@@ -14,7 +14,6 @@ namespace TopToolbar.Services.Workspaces
     {
         private const string WorkspaceProviderFileName = "WorkspaceProvider.json";
         private const string WorkspaceDefinitionsFileName = "workspaces.json";
-        private const string TemplatesDirectoryName = "templates";
         private const string WorkspaceIconsDirectoryName = "workspaces";
 
         internal static string GetProviderConfigPath()
@@ -47,11 +46,6 @@ namespace TopToolbar.Services.Workspaces
             return Path.Combine(AppPaths.ConfigDirectory, WorkspaceDefinitionsFileName);
         }
 
-        internal static string GetTemplatesDirectoryPath()
-        {
-            return Path.Combine(AppPaths.ConfigDirectory, TemplatesDirectoryName);
-        }
-
         internal static string GetWorkspaceIconsDirectoryPath()
         {
             return Path.Combine(AppPaths.IconsDirectory, WorkspaceIconsDirectoryName);
@@ -82,20 +76,6 @@ namespace TopToolbar.Services.Workspaces
 
                 File.Delete(path);
             }
-        }
-
-        internal static string GetTemplateFilePath(string templateName, string templatesDirectoryPath = null)
-        {
-            var normalizedName = NormalizeTemplateName(templateName);
-            var directory = string.IsNullOrWhiteSpace(templatesDirectoryPath)
-                ? GetTemplatesDirectoryPath()
-                : templatesDirectoryPath;
-            return Path.Combine(directory, $"{normalizedName}.json");
-        }
-
-        internal static string NormalizeTemplateName(string templateName)
-        {
-            return (templateName ?? string.Empty).Trim().ToLowerInvariant();
         }
 
         private static string NormalizeWorkspaceIconStem(string workspaceId)

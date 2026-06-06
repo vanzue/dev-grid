@@ -468,9 +468,7 @@ namespace TopToolbar.Services.Workspaces
                 return true;
             }
 
-            // Backward compatibility: template-generated workspaces created before
-            // launch-new-if-unbound existed should still launch dedicated instances.
-            return !string.IsNullOrWhiteSpace(workspace?.TemplateName);
+            return false;
         }
 
         private static TimeSpan ResolveLaunchWatchdogTimeout(int appCount)

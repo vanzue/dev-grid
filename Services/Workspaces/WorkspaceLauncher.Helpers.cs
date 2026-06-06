@@ -468,25 +468,6 @@ namespace TopToolbar.Services.Workspaces
             var focus = new List<string>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            if (workspace?.FocusPriority != null)
-            {
-                foreach (var role in workspace.FocusPriority)
-                {
-                    var normalized = NormalizeRole(role);
-                    if (string.IsNullOrWhiteSpace(normalized) || !seen.Add(normalized))
-                    {
-                        continue;
-                    }
-
-                    focus.Add(normalized);
-                }
-            }
-
-            if (focus.Count > 0)
-            {
-                return focus;
-            }
-
             if (successfulApps != null)
             {
                 for (var i = 0; i < successfulApps.Count; i++)

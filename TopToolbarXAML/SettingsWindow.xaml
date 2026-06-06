@@ -269,7 +269,7 @@
                     <TextBlock Text="Dev Grid Settings"
                             FontSize="14"
                             FontWeight="SemiBold"/>
-                    <TextBlock Text="Workspaces, templates, and launch behavior"
+                    <TextBlock Text="Workspaces and launch behavior"
                             FontSize="11"
                             Opacity="0.62"/>
                 </StackPanel>
@@ -807,26 +807,6 @@
 
                             <tkcontrols:SettingsCard Header="Enabled">
                                 <ToggleSwitch IsOn="{x:Bind ViewModel.SelectedWorkspace.Enabled, Mode=TwoWay}"/>
-                            </tkcontrols:SettingsCard>
-
-                            <tkcontrols:SettingsCard Header="Workspace title">
-                                <TextBlock Text="{x:Bind ViewModel.SelectedWorkspace.WorkspaceTitle, Mode=OneWay}"
-                                           TextWrapping="Wrap"/>
-                            </tkcontrols:SettingsCard>
-
-                            <tkcontrols:SettingsCard Header="Instance">
-                                <TextBlock Text="{x:Bind ViewModel.SelectedWorkspace.InstanceName, Mode=OneWay}"
-                                           TextWrapping="Wrap"/>
-                            </tkcontrols:SettingsCard>
-
-                            <tkcontrols:SettingsCard Header="Repository root">
-                                <TextBlock Text="{x:Bind ViewModel.SelectedWorkspace.RepoRoot, Mode=OneWay}"
-                                           TextWrapping="Wrap"/>
-                            </tkcontrols:SettingsCard>
-
-                            <tkcontrols:SettingsCard Header="Focus priority">
-                                <TextBlock Text="{x:Bind ViewModel.SelectedWorkspace.FocusPriorityDisplay, Mode=OneWay}"
-                                           TextWrapping="Wrap"/>
                             </tkcontrols:SettingsCard>
 
                             <tkcontrols:SettingsCard Header="Last launched">

@@ -13,7 +13,6 @@ using TopToolbar.Actions;
 using TopToolbar.Logging;
 using TopToolbar.Models;
 using TopToolbar.Providers;
-using TopToolbar.Services.Agents;
 using TopToolbar.Services;
 using TopToolbar.ViewModels;
 using WinUIEx;
@@ -36,7 +35,6 @@ namespace TopToolbar
         private readonly ToolbarViewModel _vm;
         private readonly NotificationService _notificationService;
         private readonly ToastWindow _toastWindow;
-        private readonly AgentSessionManager _agentSessionManager;
 
         private readonly TopToolbar.Stores.ToolbarStore _store = new();
         public ToolbarItemsViewModel ItemsViewModel { get; }
@@ -67,9 +65,6 @@ namespace TopToolbar
             _providerService = new ActionProviderService(_providerRuntime);
             _notificationService = new NotificationService(DispatcherQueue);
             _toastWindow = new ToastWindow(_notificationService);
-            _agentSessionManager = new AgentSessionManager();
-            _agentSessionManager.SessionChanged += OnAgentSessionChanged;
-            _agentSessionManager.Start();
             _actionExecutor = new ToolbarActionExecutor(
                 _providerService,
                 _contextFactory,
@@ -228,18 +223,6 @@ namespace TopToolbar
             {
             }
 
-            try
-            {
-                if (_agentSessionManager != null)
-                {
-                    _agentSessionManager.SessionChanged -= OnAgentSessionChanged;
-                    _agentSessionManager.Dispose();
-                }
-            }
-            catch
-            {
-            }
-
             GC.SuppressFinalize(this);
         }
 
@@ -261,7 +244,6 @@ namespace TopToolbar
             ApplyInvocationModes(_topBarEnabled, _radialMenuEnabled, _currentDisplayMode);
             SyncToastWindowTheme();
             UpdateToastWindowAnchor();
-            UpdateAgentHubVisualState();
             _initializedLayout = true;
         }
 

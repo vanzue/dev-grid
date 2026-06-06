@@ -63,7 +63,7 @@ namespace TopToolbar
 
             Application.Start(_ =>
             {
-                _ = new App();
+                var app = new App();
             });
         }
 

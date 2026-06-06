@@ -617,15 +617,6 @@ namespace TopToolbar.Services.Workspaces
                 return true;
             }
 
-            if (!string.IsNullOrWhiteSpace(existing.TemplateName)
-                && !string.IsNullOrWhiteSpace(incoming.TemplateName)
-                && !string.IsNullOrWhiteSpace(existing.InstanceName)
-                && !string.IsNullOrWhiteSpace(incoming.InstanceName))
-            {
-                return string.Equals(existing.TemplateName, incoming.TemplateName, StringComparison.OrdinalIgnoreCase)
-                    && string.Equals(existing.InstanceName, incoming.InstanceName, StringComparison.OrdinalIgnoreCase);
-            }
-
             return false;
         }
     }

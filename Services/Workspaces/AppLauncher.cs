@@ -511,7 +511,7 @@ namespace TopToolbar.Services.Workspaces
             return expanded;
         }
 
-        internal static string ResolveTemplateExecutable(string executableOrPath)
+        internal static string ResolveExecutableAlias(string executableOrPath)
         {
             return ResolveLaunchPath(executableOrPath);
         }
