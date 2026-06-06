@@ -79,9 +79,10 @@ namespace TopToolbar.Services.Workspaces
 
             var trimmedName = workspaceName.Trim();
             var monitors = _displayManager.GetSnapshot();
-            var windows = _windowManager.GetSnapshot();
+            var windows = GetSnapshotWindowsInZOrder();
             var applications = new List<ApplicationDefinition>();
             var windowBindings = new Dictionary<string, IntPtr>(StringComparer.OrdinalIgnoreCase);
+            var zOrder = 0;
             var focusedHandle = IntPtr.Zero;
             WindowInfo focusedWindowInfo = null;
             if (NativeWindowHelper.TryGetForegroundWindowHandle(out var currentForeground))
@@ -104,6 +105,7 @@ namespace TopToolbar.Services.Workspaces
                 var app = CreateApplicationDefinitionFromWindow(window, monitors);
                 if (app != null)
                 {
+                    app.ZOrder = zOrder++;
                     if (!string.IsNullOrWhiteSpace(effectiveProcessPath))
                     {
                         app.Path = effectiveProcessPath;
@@ -175,6 +177,53 @@ namespace TopToolbar.Services.Workspaces
             }
 
             return workspace;
+        }
+
+        private IReadOnlyList<WindowInfo> GetSnapshotWindowsInZOrder()
+        {
+            var cachedWindows = _windowManager.GetSnapshot();
+            if (cachedWindows == null || cachedWindows.Count == 0)
+            {
+                return Array.Empty<WindowInfo>();
+            }
+
+            var byHandle = new Dictionary<IntPtr, WindowInfo>();
+            foreach (var window in cachedWindows)
+            {
+                if (window?.Handle != IntPtr.Zero)
+                {
+                    byHandle[window.Handle] = window;
+                }
+            }
+
+            var ordered = new List<WindowInfo>(cachedWindows.Count);
+            var seen = new HashSet<IntPtr>();
+            foreach (var handle in NativeWindowHelper.EnumerateTopLevelWindowsInZOrder())
+            {
+                if (handle == IntPtr.Zero || !seen.Add(handle))
+                {
+                    continue;
+                }
+
+                if (byHandle.TryGetValue(handle, out var cached))
+                {
+                    ordered.Add(cached);
+                }
+                else if (NativeWindowHelper.TryCreateWindowInfo(handle, out var live) && live != null)
+                {
+                    ordered.Add(live);
+                }
+            }
+
+            foreach (var window in cachedWindows)
+            {
+                if (window?.Handle != IntPtr.Zero && seen.Add(window.Handle))
+                {
+                    ordered.Add(window);
+                }
+            }
+
+            return ordered;
         }
 
         private static bool IsSnapshotFocusedWindow(

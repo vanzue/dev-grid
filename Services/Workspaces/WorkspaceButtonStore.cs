@@ -65,6 +65,46 @@ namespace TopToolbar.Services.Workspaces
             await _configStore.SaveAsync(config, cancellationToken).ConfigureAwait(false);
         }
 
+        public async Task<string> SetWorkspaceIconAsync(
+            WorkspaceDefinition workspace,
+            string iconPath,
+            CancellationToken cancellationToken = default)
+        {
+            if (workspace == null || string.IsNullOrWhiteSpace(iconPath))
+            {
+                return string.Empty;
+            }
+
+            var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+            EnsureWorkspaceButton(config, workspace);
+
+            var buttonId = BuildButtonId(workspace.Id);
+            var button = config.Buttons.FirstOrDefault(b =>
+                string.Equals(b.WorkspaceId, workspace.Id, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(b.Id, buttonId, StringComparison.OrdinalIgnoreCase));
+            if (button == null)
+            {
+                return string.Empty;
+            }
+
+            var previousPath = button.Icon?.Type == ProviderIconType.Image
+                ? button.Icon.Path ?? string.Empty
+                : string.Empty;
+            button.Icon = new ProviderIcon
+            {
+                Type = ProviderIconType.Image,
+                Path = iconPath,
+            };
+
+            if (await ShouldClearLegacyDataAsync(config, cancellationToken).ConfigureAwait(false))
+            {
+                config.Data = null;
+            }
+
+            await _configStore.SaveAsync(config, cancellationToken).ConfigureAwait(false);
+            return previousPath;
+        }
+
         public async Task<bool> RemoveWorkspaceButtonAsync(
             string workspaceId,
             CancellationToken cancellationToken = default)

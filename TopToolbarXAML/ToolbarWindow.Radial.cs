@@ -1012,12 +1012,20 @@ namespace TopToolbar
             {
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
+                RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5),
             };
+
+            var iconScale = new ScaleTransform
+            {
+                ScaleX = 1,
+                ScaleY = 1,
+            };
+            body.RenderTransform = iconScale;
 
             var icon = new ToolbarIconPresenter
             {
                 Button = entry.IconButton,
-                IconSize = 22,
+                IconSize = 28,
                 Foreground = Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -1082,8 +1090,12 @@ namespace TopToolbar
             button.PointerEntered += (_, _) =>
             {
                 tile.Fill = tileHoverBrush;
-                AnimateDouble(scale, "ScaleX", 1.05, 200, true);
-                AnimateDouble(scale, "ScaleY", 1.05, 200, true);
+                AnimateDouble(scale, "ScaleX", 1.03, 200, true);
+                AnimateDouble(scale, "ScaleY", 1.03, 200, true);
+                AnimateDouble(iconScale, "ScaleX", 1.9, 190, true);
+                AnimateDouble(iconScale, "ScaleY", 1.9, 190, true);
+                AnimateDouble(category, "Opacity", 0.18, 150, false);
+                AnimateDouble(titlePlate, "Opacity", 0.26, 150, false);
                 AnimateDouble(liquidBack, "Opacity", 0.74, 220, false);
                 AnimateDouble(liquidDrop, "Opacity", 0.58, 240, false);
                 AnimateDouble(slash, "Opacity", 1.0, 180, false);
@@ -1095,6 +1107,10 @@ namespace TopToolbar
                 tile.Fill = tileBrush;
                 AnimateDouble(scale, "ScaleX", 1.0, 260, true);
                 AnimateDouble(scale, "ScaleY", 1.0, 260, true);
+                AnimateDouble(iconScale, "ScaleX", 1.0, 210, true);
+                AnimateDouble(iconScale, "ScaleY", 1.0, 210, true);
+                AnimateDouble(category, "Opacity", 1.0, 180, false);
+                AnimateDouble(titlePlate, "Opacity", 1.0, 180, false);
                 AnimateDouble(liquidBack, "Opacity", 0.28, 280, false);
                 AnimateDouble(liquidDrop, "Opacity", 0.18, 260, false);
                 AnimateDouble(slash, "Opacity", 0.72, 220, false);
@@ -1106,6 +1122,10 @@ namespace TopToolbar
                 tile.Fill = tilePressedBrush;
                 AnimateDouble(scale, "ScaleX", 0.98, 120, true);
                 AnimateDouble(scale, "ScaleY", 0.98, 120, true);
+                AnimateDouble(iconScale, "ScaleX", 1.55, 100, true);
+                AnimateDouble(iconScale, "ScaleY", 1.55, 100, true);
+                AnimateDouble(category, "Opacity", 0.12, 90, false);
+                AnimateDouble(titlePlate, "Opacity", 0.20, 90, false);
                 AnimateDouble(liquidBack, "Opacity", 0.82, 140, false);
                 AnimateDouble(liquidDrop, "Opacity", 0.68, 140, false);
                 AnimateDouble(slash, "Opacity", 0.92, 120, false);
@@ -1115,8 +1135,12 @@ namespace TopToolbar
             button.PointerReleased += (_, _) =>
             {
                 tile.Fill = tileHoverBrush;
-                AnimateDouble(scale, "ScaleX", 1.05, 200, true);
-                AnimateDouble(scale, "ScaleY", 1.05, 200, true);
+                AnimateDouble(scale, "ScaleX", 1.03, 200, true);
+                AnimateDouble(scale, "ScaleY", 1.03, 200, true);
+                AnimateDouble(iconScale, "ScaleX", 1.9, 190, true);
+                AnimateDouble(iconScale, "ScaleY", 1.9, 190, true);
+                AnimateDouble(category, "Opacity", 0.18, 150, false);
+                AnimateDouble(titlePlate, "Opacity", 0.26, 150, false);
                 AnimateDouble(liquidBack, "Opacity", 0.74, 220, false);
                 AnimateDouble(liquidDrop, "Opacity", 0.58, 220, false);
                 AnimateDouble(slash, "Opacity", 1.0, 160, false);

@@ -403,5 +403,29 @@ namespace TopToolbar.Services.Windowing
                 return false;
             }
         }
+
+        public static bool TryMoveWindowToTopNoActivate(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero || !IsWindow(hwnd))
+            {
+                return false;
+            }
+
+            try
+            {
+                return SetWindowPos(
+                    hwnd,
+                    IntPtr.Zero,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SwpNoMove | SwpNoSize | SwpNoActivate);
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }

@@ -208,6 +208,15 @@ namespace TopToolbar.Services.Workspaces
             set => SetProperty(ref _monitorIndex, value);
         }
 
+        private int _zOrder;
+
+        [JsonPropertyName("z-order")]
+        public int ZOrder
+        {
+            get => _zOrder;
+            set => SetProperty(ref _zOrder, value);
+        }
+
         private string _version = string.Empty;
 
         [JsonPropertyName("version")]

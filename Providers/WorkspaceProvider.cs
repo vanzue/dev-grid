@@ -27,6 +27,7 @@ namespace TopToolbar.Providers
         private readonly WorkspaceDefinitionStore _definitionStore;
         private readonly WorkspaceButtonStore _buttonStore;
         private readonly WorkspacesRuntimeService _workspacesService;
+        private readonly WorkspaceThumbnailRenderer _thumbnailRenderer;
 
         // Caching + watcher fields
         private readonly object _cacheLock = new();
@@ -50,6 +51,7 @@ namespace TopToolbar.Providers
             _definitionStore = new WorkspaceDefinitionStore(null, _configStore);
             _buttonStore = new WorkspaceButtonStore(_configStore, _definitionStore);
             _workspacesService = new WorkspacesRuntimeService(_configStore.FilePath);
+            _thumbnailRenderer = new WorkspaceThumbnailRenderer();
 
             try
             {
@@ -286,12 +288,41 @@ namespace TopToolbar.Providers
             var workspace = await _workspacesService.SnapshotAsync(workspaceName, cancellationToken).ConfigureAwait(false);
             if (workspace != null)
             {
+                string thumbnailPath = null;
                 try
                 {
-                    await _buttonStore.EnsureButtonAsync(workspace, cancellationToken).ConfigureAwait(false);
+                    thumbnailPath = _thumbnailRenderer.Render(workspace);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    AppLogger.LogWarning($"WorkspaceProvider: failed to render thumbnail for workspace '{workspace.Id}' - {ex.Message}");
+                }
+
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(thumbnailPath))
+                    {
+                        var previousPath = await _buttonStore.SetWorkspaceIconAsync(workspace, thumbnailPath, cancellationToken)
+                            .ConfigureAwait(false);
+                        DeletePreviousWorkspaceIcon(workspace.Id, previousPath, thumbnailPath);
+                    }
+                    else
+                    {
+                        await _buttonStore.EnsureButtonAsync(workspace, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.LogWarning($"WorkspaceProvider: failed to update workspace button for '{workspace.Id}' - {ex.Message}");
+                    TryDeleteFile(thumbnailPath);
+                    try
+                    {
+                        await _buttonStore.EnsureButtonAsync(workspace, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception fallbackEx)
+                    {
+                        AppLogger.LogWarning($"WorkspaceProvider: failed to ensure fallback workspace button for '{workspace.Id}' - {fallbackEx.Message}");
+                    }
                 }
 
                 try
@@ -360,6 +391,15 @@ namespace TopToolbar.Providers
 
             try
             {
+                WorkspaceStoragePaths.DeleteWorkspaceIcons(normalizedWorkspaceId);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"WorkspaceProvider: failed to delete workspace thumbnail(s) '{normalizedWorkspaceId}' - {ex.Message}");
+            }
+
+            try
+            {
                 await ReloadIfChangedAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -368,6 +408,34 @@ namespace TopToolbar.Providers
             }
 
             return true;
+        }
+
+        private static void DeletePreviousWorkspaceIcon(string workspaceId, string previousPath, string currentPath)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(previousPath)
+                    && !string.Equals(previousPath, currentPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    TryDeleteFile(previousPath);
+                }
+
+                WorkspaceStoragePaths.DeleteWorkspaceIcons(workspaceId, currentPath);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"WorkspaceProvider: failed to prune old workspace thumbnail(s) '{workspaceId}' - {ex.Message}");
+            }
+        }
+
+        private static void TryDeleteFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                return;
+            }
+
+            File.Delete(path);
         }
 
         public string Id => "WorkspaceProvider";

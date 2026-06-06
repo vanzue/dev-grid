@@ -370,9 +370,10 @@ namespace TopToolbar.Services.Workspaces
 
                 var arrangedResults = await Task.WhenAll(resizeTasks).ConfigureAwait(false);
                 result.ArrangedCount = arrangedResults.Count(arranged => arranged);
+                var zOrderedCount = RestoreZOrder(successfulApps);
                 swPhase2.Stop();
                 result.StageDurationsMs["arrange"] = swPhase2.ElapsedMilliseconds;
-                LogPerf($"WorkspaceRuntime: Phase 2 done in {swPhase2.ElapsedMilliseconds} ms");
+                LogPerf($"WorkspaceRuntime: Phase 2 done in {swPhase2.ElapsedMilliseconds} ms, z-order restored={zOrderedCount}");
 
                 // ============================================================
                 // Phase 3: Minimize extraneous windows

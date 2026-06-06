@@ -88,6 +88,33 @@ namespace TopToolbar.Services.Workspaces
             catch { }
         }
 
+        private static int RestoreZOrder(IReadOnlyList<EnsureAppResult> successfulApps)
+        {
+            if (successfulApps == null || successfulApps.Count == 0)
+            {
+                return 0;
+            }
+
+            var ordered = successfulApps
+                .Where(result => result.Success
+                    && result.Handle != IntPtr.Zero
+                    && result.App != null
+                    && !result.App.Minimized)
+                .OrderByDescending(result => result.App.ZOrder)
+                .ToList();
+
+            var restored = 0;
+            foreach (var result in ordered)
+            {
+                if (NativeWindowHelper.TryMoveWindowToTopNoActivate(result.Handle))
+                {
+                    restored++;
+                }
+            }
+
+            return restored;
+        }
+
         private WindowPlacement ResolveTargetPlacement(WorkspaceDefinition workspace, ApplicationDefinition app)
         {
             if (app?.Position == null || app.Position.IsEmpty)

@@ -72,6 +72,24 @@ namespace TopToolbar.Services.Windowing
             }
         }
 
+        public static IReadOnlyList<IntPtr> EnumerateTopLevelWindowsInZOrder()
+        {
+            var windows = new List<IntPtr>();
+            _ = EnumWindows(
+                (hwnd, _) =>
+                {
+                    if (IsTopLevelWindow(hwnd))
+                    {
+                        windows.Add(hwnd);
+                    }
+
+                    return true;
+                },
+                IntPtr.Zero);
+
+            return windows;
+        }
+
         public static bool TryGetCurrentVirtualDesktopId(out Guid desktopId)
         {
             desktopId = Guid.Empty;

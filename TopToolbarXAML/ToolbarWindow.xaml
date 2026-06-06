@@ -61,14 +61,33 @@
                                     BorderThickness="0"
                                     CornerRadius="{TemplateBinding CornerRadius}">
                                     <ContentPresenter
+                                        x:Name="ContentPresenterElement"
                                         HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                         VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                         Padding="{TemplateBinding Padding}"
-                                        Content="{TemplateBinding Content}" />
+                                        Content="{TemplateBinding Content}"
+                                        RenderTransformOrigin="0.5,0.5">
+                                        <ContentPresenter.RenderTransform>
+                                            <ScaleTransform x:Name="ContentScaleTransform" ScaleX="1" ScaleY="1" />
+                                        </ContentPresenter.RenderTransform>
+                                    </ContentPresenter>
                                 </Border>
                                 <VisualStateManager.VisualStateGroups>
                                     <VisualStateGroup x:Name="CommonStates">
-                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="Normal">
+                                            <Storyboard>
+                                                <DoubleAnimation
+                                                    Storyboard.TargetName="ContentScaleTransform"
+                                                    Storyboard.TargetProperty="ScaleX"
+                                                    To="1"
+                                                    Duration="0:0:0.18" />
+                                                <DoubleAnimation
+                                                    Storyboard.TargetName="ContentScaleTransform"
+                                                    Storyboard.TargetProperty="ScaleY"
+                                                    To="1"
+                                                    Duration="0:0:0.18" />
+                                            </Storyboard>
+                                        </VisualState>
                                         <VisualState x:Name="PointerOver">
                                             <Storyboard>
                                                 <ObjectAnimationUsingKeyFrames
@@ -78,6 +97,16 @@
                                                         KeyTime="0"
                                                         Value="{ThemeResource ButtonBackgroundPointerOver}" />
                                                 </ObjectAnimationUsingKeyFrames>
+                                                <DoubleAnimation
+                                                    Storyboard.TargetName="ContentScaleTransform"
+                                                    Storyboard.TargetProperty="ScaleX"
+                                                    To="1.55"
+                                                    Duration="0:0:0.16" />
+                                                <DoubleAnimation
+                                                    Storyboard.TargetName="ContentScaleTransform"
+                                                    Storyboard.TargetProperty="ScaleY"
+                                                    To="1.55"
+                                                    Duration="0:0:0.16" />
                                             </Storyboard>
                                         </VisualState>
                                         <VisualState x:Name="Pressed">
@@ -89,6 +118,16 @@
                                                         KeyTime="0"
                                                         Value="{ThemeResource ButtonBackgroundPressed}" />
                                                 </ObjectAnimationUsingKeyFrames>
+                                                <DoubleAnimation
+                                                    Storyboard.TargetName="ContentScaleTransform"
+                                                    Storyboard.TargetProperty="ScaleX"
+                                                    To="1.22"
+                                                    Duration="0:0:0.08" />
+                                                <DoubleAnimation
+                                                    Storyboard.TargetName="ContentScaleTransform"
+                                                    Storyboard.TargetProperty="ScaleY"
+                                                    To="1.22"
+                                                    Duration="0:0:0.08" />
                                             </Storyboard>
                                         </VisualState>
                                         <VisualState x:Name="Disabled">
@@ -104,6 +143,16 @@
                                                     Storyboard.TargetName="BackgroundElement"
                                                     Storyboard.TargetProperty="Opacity"
                                                     To="0.75"
+                                                    Duration="0" />
+                                                <DoubleAnimation
+                                                    Storyboard.TargetName="ContentScaleTransform"
+                                                    Storyboard.TargetProperty="ScaleX"
+                                                    To="1"
+                                                    Duration="0" />
+                                                <DoubleAnimation
+                                                    Storyboard.TargetName="ContentScaleTransform"
+                                                    Storyboard.TargetProperty="ScaleY"
+                                                    To="1"
                                                     Duration="0" />
                                             </Storyboard>
                                         </VisualState>

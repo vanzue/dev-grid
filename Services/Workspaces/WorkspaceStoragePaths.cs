@@ -15,6 +15,7 @@ namespace TopToolbar.Services.Workspaces
         private const string WorkspaceProviderFileName = "WorkspaceProvider.json";
         private const string WorkspaceDefinitionsFileName = "workspaces.json";
         private const string TemplatesDirectoryName = "templates";
+        private const string WorkspaceIconsDirectoryName = "workspaces";
 
         internal static string GetProviderConfigPath()
         {
@@ -51,6 +52,38 @@ namespace TopToolbar.Services.Workspaces
             return Path.Combine(AppPaths.ConfigDirectory, TemplatesDirectoryName);
         }
 
+        internal static string GetWorkspaceIconsDirectoryPath()
+        {
+            return Path.Combine(AppPaths.IconsDirectory, WorkspaceIconsDirectoryName);
+        }
+
+        internal static string GetWorkspaceIconPath(string workspaceId, long versionTicks)
+        {
+            var stem = NormalizeWorkspaceIconStem(workspaceId);
+            return Path.Combine(GetWorkspaceIconsDirectoryPath(), $"{stem}.{versionTicks}.png");
+        }
+
+        internal static void DeleteWorkspaceIcons(string workspaceId, string exceptPath = null)
+        {
+            var directory = GetWorkspaceIconsDirectoryPath();
+            if (!Directory.Exists(directory))
+            {
+                return;
+            }
+
+            var stem = NormalizeWorkspaceIconStem(workspaceId);
+            foreach (var path in Directory.GetFiles(directory, $"{stem}.*.png"))
+            {
+                if (!string.IsNullOrWhiteSpace(exceptPath)
+                    && string.Equals(Path.GetFullPath(path), Path.GetFullPath(exceptPath), StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                File.Delete(path);
+            }
+        }
+
         internal static string GetTemplateFilePath(string templateName, string templatesDirectoryPath = null)
         {
             var normalizedName = NormalizeTemplateName(templateName);
@@ -63,6 +96,20 @@ namespace TopToolbar.Services.Workspaces
         internal static string NormalizeTemplateName(string templateName)
         {
             return (templateName ?? string.Empty).Trim().ToLowerInvariant();
+        }
+
+        private static string NormalizeWorkspaceIconStem(string workspaceId)
+        {
+            var value = string.IsNullOrWhiteSpace(workspaceId)
+                ? "workspace"
+                : workspaceId.Trim();
+            var invalid = Path.GetInvalidFileNameChars();
+            foreach (var c in invalid)
+            {
+                value = value.Replace(c, '_');
+            }
+
+            return value;
         }
 
         internal static string GetLegacyPowerToysPath()
