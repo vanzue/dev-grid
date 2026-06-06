@@ -15,6 +15,10 @@ public class ToolbarConfig
 
     public ToolbarDisplayMode DisplayMode { get; set; } = ToolbarDisplayMode.TopBar;
 
+    public bool TopBarEnabled { get; set; } = true;
+
+    public bool RadialMenuEnabled { get; set; } = true;
+
     public bool RequireCtrlForTopBarTrigger { get; set; }
 
     public ToolbarTheme Theme { get; set; } = ToolbarTheme.WarmFrosted;

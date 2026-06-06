@@ -377,7 +377,7 @@ namespace TopToolbar
 
         private static DataTemplate CreateIconItemTemplate()
         {
-            // Create template with x:Bind style using Loaded event workaround
+            // Create the item template with x:Bind style using Loaded event workaround.
             const string templateXaml = @"<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
                                                   xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
                 <StackPanel x:Name='RootPanel' Width='96' Height='120' HorizontalAlignment='Center' Spacing='6' Tag='{Binding}'>

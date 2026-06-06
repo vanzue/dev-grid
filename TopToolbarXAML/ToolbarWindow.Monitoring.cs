@@ -39,7 +39,7 @@ namespace TopToolbar
 
         private void MonitorTimer_Elapsed(object sender, ElapsedEventArgs e)
         {
-            if (_currentDisplayMode != Models.ToolbarDisplayMode.TopBar)
+            if (!_topBarEnabled)
             {
                 return;
             }
@@ -101,7 +101,13 @@ namespace TopToolbar
 
         private void ShowToolbar()
         {
+            if (!_topBarEnabled || _isRadialVisible)
+            {
+                return;
+            }
+
             _isVisible = true;
+            ToolbarContainer.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
 
             // Reposition to current monitor top edge
             GetCursorPos(out var ptPx);

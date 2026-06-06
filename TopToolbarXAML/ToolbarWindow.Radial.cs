@@ -30,6 +30,8 @@ namespace TopToolbar
         private const uint VkSpace = 0x20;
 
         private ToolbarDisplayMode _currentDisplayMode = ToolbarDisplayMode.TopBar;
+        private bool _topBarEnabled = true;
+        private bool _radialMenuEnabled = true;
         private bool _radialHotKeyRegistered;
         private bool _isRadialVisible;
         private bool _isShowingRadial;
@@ -151,22 +153,42 @@ namespace TopToolbar
 
         private void ApplyDisplayMode(ToolbarDisplayMode mode)
         {
-            _currentDisplayMode = mode;
+            ApplyInvocationModes(mode == ToolbarDisplayMode.TopBar, mode == ToolbarDisplayMode.RadialMenu, mode);
+        }
 
-            if (_currentDisplayMode == ToolbarDisplayMode.RadialMenu)
+        private void ApplyInvocationModes(bool topBarEnabled, bool radialMenuEnabled, ToolbarDisplayMode legacyMode)
+        {
+            _currentDisplayMode = legacyMode;
+            _topBarEnabled = topBarEnabled;
+            _radialMenuEnabled = radialMenuEnabled;
+
+            if (_radialMenuEnabled)
+            {
+                EnsureRadialHotKey();
+                StartRadialHotKeyFallbackPolling();
+            }
+            else
+            {
+                HideRadialMenu();
+                UnregisterRadialHotKey();
+            }
+
+            if (_topBarEnabled)
+            {
+                ToolbarContainer.Visibility = _isRadialVisible ? Visibility.Collapsed : Visibility.Visible;
+                StartMonitoring();
+            }
+            else
             {
                 StopMonitoring();
                 HideToolbar();
                 ToolbarContainer.Visibility = Visibility.Collapsed;
-                EnsureRadialHotKey();
-                StartRadialHotKeyFallbackPolling();
-                return;
             }
 
-            HideRadialMenu();
-            UnregisterRadialHotKey();
-            ToolbarContainer.Visibility = Visibility.Visible;
-            StartMonitoring();
+            if (!_topBarEnabled && _radialMenuEnabled && !_isRadialVisible)
+            {
+                ParkRadialHostWindow();
+            }
         }
 
         private void EnsureRadialHotKey()
@@ -206,7 +228,7 @@ namespace TopToolbar
                 return;
             }
 
-            if (_currentDisplayMode != ToolbarDisplayMode.RadialMenu)
+            if (!_radialMenuEnabled)
             {
                 return;
             }
@@ -265,7 +287,7 @@ namespace TopToolbar
 
         private void OnRadialHotKeyPollElapsed(object sender, System.Timers.ElapsedEventArgs e)
         {
-            if (_currentDisplayMode != ToolbarDisplayMode.RadialMenu)
+            if (!_radialMenuEnabled)
             {
                 return;
             }
@@ -466,9 +488,20 @@ namespace TopToolbar
 
         private void ParkRadialHostWindow()
         {
-            if (_currentDisplayMode != ToolbarDisplayMode.RadialMenu)
+            if (!_radialMenuEnabled)
             {
                 AppWindow.Hide();
+                return;
+            }
+
+            if (_topBarEnabled)
+            {
+                ToolbarContainer.Visibility = Visibility.Visible;
+                ResizeToContent();
+                PositionAtTopCenter();
+                AppWindow.Hide();
+                _isVisible = false;
+                UpdateToastWindowAnchor();
                 return;
             }
 

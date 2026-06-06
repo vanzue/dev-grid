@@ -108,6 +108,8 @@ namespace TopToolbar.Services
                     ["Alt+W"] = "workspace.switcher",
                 },
                 DisplayMode = ToolbarDisplayMode.TopBar,
+                TopBarEnabled = true,
+                RadialMenuEnabled = true,
             };
         }
     }

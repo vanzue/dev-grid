@@ -112,7 +112,7 @@ namespace TopToolbar
                 AgentHubButton.IsEnabled = !_agentLaunchInProgress;
             }
 
-            if (chipCountChanged && _currentDisplayMode == Models.ToolbarDisplayMode.TopBar)
+            if (chipCountChanged && _topBarEnabled)
             {
                 ResizeToContent();
                 if (_isVisible)

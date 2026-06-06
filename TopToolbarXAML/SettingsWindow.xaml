@@ -309,7 +309,7 @@
                                 Margin="2,0,2,8">
                         <TextBlock Text="SETTINGS"
                                   Style="{StaticResource SettingsSectionLabelStyle}"/>
-                        <TextBlock Text="Keep the surface focused: only workspace behavior and templates live here."
+                        <TextBlock Text="Keep the surface focused: workspace behavior and appearance live here."
                                   Style="{StaticResource SettingsPageSubtitleStyle}"/>
                     </StackPanel>
 
@@ -337,34 +337,6 @@
                             </Border>
                             <TextBlock Grid.Column="1"
                                        Text="General"
-                                       FontWeight="Normal"
-                                       VerticalAlignment="Center"/>
-                        </Grid>
-                    </ListViewItem>
-
-                    <ListViewItem Grid.Row="2"
-                                  x:Name="TemplatesItem"
-                                  IsSelected="{x:Bind ViewModel.IsTemplatesSelected, Mode=TwoWay}"
-                                  Tapped="OnTemplatesItemTapped"
-                                  Style="{StaticResource ToolbarListItemStyle}"
-                                  Padding="4,6">
-                        <Grid ColumnSpacing="10" Padding="6,2,4,2">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Border Width="28"
-                                    Height="28"
-                                    CornerRadius="8"
-                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}">
-                                <FontIcon FontFamily="Segoe MDL2 Assets"
-                                         Glyph="&#xE8D2;"
-                                         FontSize="14"
-                                         VerticalAlignment="Center"
-                                         HorizontalAlignment="Center"/>
-                            </Border>
-                            <TextBlock Grid.Column="1"
-                                       Text="Templates"
                                        FontWeight="Normal"
                                        VerticalAlignment="Center"/>
                         </Grid>
@@ -465,7 +437,7 @@
                         </ListView.Resources>
                     </ListView>
 
-                    <!-- Workspaces header/list are hidden in template-only settings mode -->
+                    <!-- Workspaces header/list -->
                     <Grid Grid.Row="5"
                           Margin="0,8,0,2"
                           ColumnSpacing="8"
@@ -628,22 +600,35 @@
                                             CornerRadius="12"
                                             Padding="2">
                                         <StackPanel Spacing="0">
-                                            <tkcontrols:SettingsCard ContentAlignment="Right">
+                                            <tkcontrols:SettingsCard Description="Show the top edge toolbar when the cursor reaches the screen edge."
+                                                                    ContentAlignment="Right">
                                                 <tkcontrols:SettingsCard.Header>
                                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE8A7;" FontSize="14"/>
-                                                        <TextBlock Text="Mode"/>
+                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE7F4;" FontSize="14"/>
+                                                        <TextBlock Text="Top bar"/>
                                                     </StackPanel>
                                                 </tkcontrols:SettingsCard.Header>
-                                                <ComboBox Width="260"
-                                                          SelectedIndex="{x:Bind ViewModel.DisplayModeIndex, Mode=TwoWay}"
-                                                          HorizontalAlignment="Right">
-                                                    <ComboBoxItem Content="Top bar (screen edge trigger)"/>
-                                                    <ComboBoxItem Content="Radial menu (Ctrl+Shift+Space)"/>
-                                                </ComboBox>
+                                                <ToggleSwitch HorizontalAlignment="Right"
+                                                              IsOn="{x:Bind ViewModel.TopBarEnabled, Mode=TwoWay}"
+                                                              OnContent=""
+                                                              OffContent=""/>
                                             </tkcontrols:SettingsCard>
 
-                                            <tkcontrols:SettingsCard Description="Only trigger when Ctrl is held in Top bar mode."
+                                            <tkcontrols:SettingsCard Description="Enable the ring menu on Ctrl+Shift+Space."
+                                                                    ContentAlignment="Right">
+                                                <tkcontrols:SettingsCard.Header>
+                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE786;" FontSize="14"/>
+                                                        <TextBlock Text="Ring"/>
+                                                    </StackPanel>
+                                                </tkcontrols:SettingsCard.Header>
+                                                <ToggleSwitch HorizontalAlignment="Right"
+                                                              IsOn="{x:Bind ViewModel.RadialMenuEnabled, Mode=TwoWay}"
+                                                              OnContent=""
+                                                              OffContent=""/>
+                                            </tkcontrols:SettingsCard>
+
+                                            <tkcontrols:SettingsCard Description="Only trigger the top bar when Ctrl is held."
                                                                     ContentAlignment="Right">
                                                 <tkcontrols:SettingsCard.Header>
                                                     <StackPanel Orientation="Horizontal" Spacing="10">
@@ -653,7 +638,7 @@
                                                 </tkcontrols:SettingsCard.Header>
                                                 <ToggleSwitch HorizontalAlignment="Right"
                                                               IsOn="{x:Bind ViewModel.RequireCtrlForTopBarTrigger, Mode=TwoWay}"
-                                                              IsEnabled="{x:Bind ViewModel.IsTopBarModeSelected, Mode=OneWay}"
+                                                              IsEnabled="{x:Bind ViewModel.TopBarEnabled, Mode=OneWay}"
                                                               OnContent=""
                                                               OffContent=""/>
                                             </tkcontrols:SettingsCard>
@@ -684,315 +669,6 @@
                                 </ComboBox>
                             </tkcontrols:SettingsCard>
 
-                        </StackPanel>
-
-                        <StackPanel Spacing="18" Visibility="{x:Bind ViewModel.IsTemplatesSelected, Mode=OneWay}">
-                            <Grid ColumnSpacing="16"
-                                  Margin="0,0,0,4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Border Width="48"
-                                        Height="48"
-                                        CornerRadius="14"
-                                        Background="{StaticResource SettingsAccentGradientBrush}"
-                                        VerticalAlignment="Top">
-                                    <FontIcon FontFamily="Segoe MDL2 Assets"
-                                              Glyph="&#xE8D2;"
-                                              Foreground="White"
-                                              FontSize="21"
-                                              HorizontalAlignment="Center"
-                                              VerticalAlignment="Center"/>
-                                </Border>
-                                <StackPanel Grid.Column="1"
-                                            Spacing="5"
-                                            VerticalAlignment="Center">
-                                    <TextBlock Text="Templates"
-                                               Style="{StaticResource SettingsPageTitleStyle}"/>
-                                    <TextBlock Text="Design reusable workspace blueprints. Snapshot stays outside Settings for quick ad-hoc capture."
-                                               Style="{StaticResource SettingsPageSubtitleStyle}"/>
-                                </StackPanel>
-                            </Grid>
-
-                            <StackPanel Orientation="Horizontal"
-                                        Spacing="10">
-                                <Button Content="Create template"
-                                        Style="{StaticResource AccentButtonStyle}"
-                                        HorizontalAlignment="Left"
-                                        Click="OnCreateWorkspaceTemplate"/>
-                                <Button x:Name="DeleteSelectedTemplateButton"
-                                        Content="Delete"
-                                        Style="{StaticResource SettingsPillButtonStyle}"
-                                        HorizontalAlignment="Left"
-                                        IsEnabled="False"
-                                        Click="OnDeleteSelectedTemplate"/>
-                            </StackPanel>
-
-                            <Grid ColumnSpacing="16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="300"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <Border Grid.Column="0"
-                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="16"
-                                        Padding="14">
-                                    <StackPanel Spacing="10">
-                                        <StackPanel Spacing="3">
-                                            <StackPanel Orientation="Horizontal" Spacing="9">
-                                                <FontIcon FontFamily="Segoe MDL2 Assets"
-                                                          Glyph="&#xE8F1;"
-                                                          FontSize="15"/>
-                                                <TextBlock Text="Template library"
-                                                           FontSize="14"
-                                                           FontWeight="SemiBold"/>
-                                            </StackPanel>
-                                            <TextBlock Text="Workspace templates"
-                                                       Opacity="0.68"/>
-                                        </StackPanel>
-                                        <ListView x:Name="WorkspaceTemplatesList"
-                                                  SelectionMode="Single"
-                                                  MinHeight="410"
-                                                  MaxHeight="520"
-                                                  SelectionChanged="OnWorkspaceTemplatesListSelectionChanged"
-                                                  Margin="0,2,0,0">
-                                            <ListView.ItemTemplate>
-                                                <DataTemplate>
-                                                    <StackPanel Spacing="2" Padding="4,4,4,4">
-                                                        <TextBlock Text="{Binding DisplayName}"
-                                                                   FontWeight="SemiBold"
-                                                                   TextTrimming="CharacterEllipsis"/>
-                                                        <TextBlock Text="{Binding NameAndKind}"
-                                                                   Opacity="0.72"
-                                                                   TextTrimming="CharacterEllipsis"/>
-                                                        <TextBlock Text="{Binding Description}"
-                                                                   Opacity="0.62"
-                                                                   TextWrapping="WrapWholeWords"
-                                                                   MaxLines="2"/>
-                                                    </StackPanel>
-                                                </DataTemplate>
-                                            </ListView.ItemTemplate>
-                                        </ListView>
-
-                                        <TextBlock Text="Agent templates"
-                                                   Opacity="0.72"
-                                                   Margin="0,8,0,0"
-                                                   Visibility="Collapsed"/>
-                                        <ListView x:Name="AgentTemplatesList"
-                                                  SelectionMode="Single"
-                                                  MinHeight="170"
-                                                  MaxHeight="200"
-                                                  SelectionChanged="OnAgentTemplatesListSelectionChanged"
-                                                  Margin="0,2,0,0"
-                                                  Visibility="Collapsed">
-                                            <ListView.ItemTemplate>
-                                                <DataTemplate>
-                                                    <StackPanel Spacing="2" Padding="4,4,4,4">
-                                                        <TextBlock Text="{Binding DisplayName}"
-                                                                   FontWeight="SemiBold"
-                                                                   TextTrimming="CharacterEllipsis"/>
-                                                        <TextBlock Text="{Binding NameAndKind}"
-                                                                   Opacity="0.72"
-                                                                   TextTrimming="CharacterEllipsis"/>
-                                                        <TextBlock Text="{Binding Description}"
-                                                                   Opacity="0.62"
-                                                                   TextWrapping="WrapWholeWords"
-                                                                   MaxLines="2"/>
-                                                    </StackPanel>
-                                                </DataTemplate>
-                                            </ListView.ItemTemplate>
-                                        </ListView>
-
-                                        <TextBlock x:Name="TemplatesEmptyText"
-                                                   Text="No templates yet. Create one to get started."
-                                                   Opacity="0.7"
-                                                   Visibility="Collapsed"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <Border x:Name="TemplateEditorBorder"
-                                        Grid.Column="1"
-                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="16"
-                                        Padding="18">
-                                    <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                                  HorizontalScrollBarVisibility="Disabled"
-                                                  MaxHeight="620">
-                                        <StackPanel Spacing="14">
-                                            <StackPanel Orientation="Horizontal" Spacing="9">
-                                                <FontIcon FontFamily="Segoe MDL2 Assets"
-                                                          Glyph="&#xE70F;"
-                                                          FontSize="15"/>
-                                                <TextBlock Text="Template configuration"
-                                                           FontSize="14"
-                                                           FontWeight="SemiBold"/>
-                                            </StackPanel>
-                                            <TextBlock x:Name="TemplateEditorHintText"
-                                                       Text="Select a template from the left list."
-                                                       Opacity="0.72"
-                                                       TextWrapping="Wrap"/>
-
-                                            <TextBlock Text="Template id"
-                                                       Opacity="0.72"/>
-                                            <TextBox x:Name="TemplateIdTextBox"
-                                                     IsReadOnly="True"/>
-
-                                            <TextBlock Text="Display name"
-                                                       Opacity="0.72"/>
-                                            <TextBox x:Name="TemplateDisplayNameTextBox"/>
-
-                                            <TextBlock Text="Description"
-                                                       Opacity="0.72"/>
-                                            <TextBox x:Name="TemplateDescriptionTextBox"
-                                                     AcceptsReturn="True"
-                                                     TextWrapping="Wrap"
-                                                     MinHeight="64"/>
-
-                                            <TextBlock Text="Template type"
-                                                       Opacity="0.72"
-                                                       Visibility="Collapsed"/>
-                                            <ComboBox x:Name="TemplateKindComboBox"
-                                                      SelectionChanged="OnTemplateKindSelectionChanged"
-                                                      Visibility="Collapsed">
-                                                <ComboBoxItem Content="workspace"/>
-                                                <ComboBoxItem Content="agent"/>
-                                            </ComboBox>
-
-                                            <Grid x:Name="TemplateWorkspaceLayoutSection"
-                                                  ColumnSpacing="10">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                </Grid.ColumnDefinitions>
-                                                <StackPanel Grid.Column="0" Spacing="6">
-                                                    <TextBlock Text="Window layout"
-                                                               Opacity="0.72"/>
-                                                    <TextBlock Text="Default tiling layout (auto based on enabled apps)."
-                                                               Opacity="0.62"
-                                                               TextWrapping="Wrap"/>
-                                                    <ComboBox x:Name="TemplateLayoutStrategyComboBox"
-                                                              Visibility="Collapsed"
-                                                               IsEnabled="False"
-                                                               SelectedIndex="1">
-                                                        <ComboBoxItem Content="single"/>
-                                                        <ComboBoxItem Content="side-by-side"/>
-                                                        <ComboBoxItem Content="triple-columns"/>
-                                                        <ComboBoxItem Content="grid-2x2"/>
-                                                    </ComboBox>
-                                                </StackPanel>
-                                                <StackPanel Grid.Column="1" Spacing="6">
-                                                    <TextBlock Text="Monitor policy"
-                                                               Opacity="0.72"/>
-                                                    <ComboBox x:Name="TemplateMonitorPolicyComboBox"
-                                                              SelectedIndex="0">
-                                                        <ComboBoxItem Content="primary"/>
-                                                        <ComboBoxItem Content="current"/>
-                                                        <ComboBoxItem Content="any"/>
-                                                    </ComboBox>
-                                                </StackPanel>
-                                            </Grid>
-
-                                            <ToggleSwitch x:Name="TemplateRequiresRepoToggle"
-                                                          Header="Requires repository path"
-                                                          IsOn="True"
-                                                          OnContent=""
-                                                          OffContent=""/>
-                                            <TextBox x:Name="TemplateDefaultRepoTextBox"
-                                                     PlaceholderText="Default repo path (optional)"/>
-
-                                            <ToggleSwitch x:Name="TemplateCreateWorktreeToggle"
-                                                          Header="Create git worktree by default"
-                                                          IsOn="False"
-                                                          OnContent=""
-                                                          OffContent=""/>
-                                            <TextBox x:Name="TemplateWorktreeBaseBranchTextBox"
-                                                     PlaceholderText="Base branch (default: main)"
-                                                     Text="main"/>
-
-                                            <Border x:Name="TemplateAgentSectionDivider"
-                                                    Height="1"
-                                                    Background="{ThemeResource CardStrokeColorDefaultBrush}"
-                                                    Opacity="0.35"/>
-
-                                            <StackPanel x:Name="TemplateAgentSection"
-                                                        Spacing="8"
-                                                        Visibility="Collapsed">
-                                                <TextBlock Text="Agent startup"
-                                                           FontWeight="SemiBold"/>
-                                                <TextBlock Text="Command to run in a new Windows Terminal window."
-                                                           Opacity="0.62"/>
-                                                <ToggleSwitch x:Name="TemplateEnableAgentToggle"
-                                                              Header="Enable agent command"
-                                                              Visibility="Collapsed"
-                                                              IsOn="False"
-                                                              OnContent=""
-                                                              OffContent=""/>
-                                                <ComboBox x:Name="TemplateAgentComboBox"
-                                                          Visibility="Collapsed"
-                                                          SelectedIndex="0">
-                                                    <ComboBoxItem Content="copilot"/>
-                                                </ComboBox>
-                                                <TextBox x:Name="TemplateAgentCommandTextBox"
-                                                         PlaceholderText="Agent command (for example: copilot)"/>
-                                            </StackPanel>
-
-                                            <Border x:Name="TemplateWorkspaceAppsDivider"
-                                                    Height="1"
-                                                    Background="{ThemeResource CardStrokeColorDefaultBrush}"
-                                                    Opacity="0.35"/>
-
-                                            <StackPanel x:Name="TemplateWorkspaceApplicationsSection"
-                                                        Spacing="8">
-                                                <TextBlock Text="Applications"
-                                                           FontWeight="SemiBold"/>
-                                                <TextBlock Text="Only enabled apps below are included in layout calculation."
-                                                           Opacity="0.62"/>
-                                                <ToggleSwitch x:Name="TemplateIncludeTerminalToggle"
-                                                              Header="Windows Terminal"
-                                                              IsOn="True"
-                                                              OnContent=""
-                                                              OffContent=""/>
-                                                <ToggleSwitch x:Name="TemplateIncludeVsCodeToggle"
-                                                              Header="VS Code"
-                                                              IsOn="True"
-                                                              OnContent=""
-                                                              OffContent=""/>
-                                                <ToggleSwitch x:Name="TemplateIncludeVisualStudioToggle"
-                                                              Header="Visual Studio (devenv)"
-                                                              IsOn="False"
-                                                              OnContent=""
-                                                              OffContent=""/>
-                                                <TextBox x:Name="TemplateVisualStudioSolutionTextBox"
-                                                         PlaceholderText="Optional .sln path relative to repo"/>
-                                                <ToggleSwitch x:Name="TemplateIncludeLogsToggle"
-                                                              Header="Logs folder"
-                                                              IsOn="False"
-                                                              OnContent=""
-                                                              OffContent=""/>
-                                                <TextBox x:Name="TemplateLogsPathTextBox"
-                                                         PlaceholderText="Folder path (default: {repo})"/>
-                                            </StackPanel>
-
-                                            <TextBlock x:Name="TemplateEditorStatusText"
-                                                       Opacity="0.72"
-                                                       TextWrapping="Wrap"/>
-
-                                            <Button x:Name="SaveSelectedTemplateButton"
-                                                    Content="Save template"
-                                                    Style="{StaticResource AccentButtonStyle}"
-                                                    HorizontalAlignment="Left"
-                                                    IsEnabled="False"
-                                                    Click="OnSaveSelectedTemplate"/>
-                                        </StackPanel>
-                                    </ScrollViewer>
-                                </Border>
-                            </Grid>
                         </StackPanel>
 
                         <!-- Editable group settings (user-created groups only) -->
@@ -1113,7 +789,7 @@
                             </tkcontrols:SettingsCard>
                         </StackPanel>
 
-                        <!-- Workspace settings are hidden in template-only settings mode -->
+                        <!-- Workspace settings -->
                         <StackPanel Spacing="16" Visibility="Collapsed">
                             <TextBlock Text="Workspace"
                                        FontSize="18"
@@ -1135,11 +811,6 @@
 
                             <tkcontrols:SettingsCard Header="Workspace title">
                                 <TextBlock Text="{x:Bind ViewModel.SelectedWorkspace.WorkspaceTitle, Mode=OneWay}"
-                                           TextWrapping="Wrap"/>
-                            </tkcontrols:SettingsCard>
-
-                            <tkcontrols:SettingsCard Header="Template">
-                                <TextBlock Text="{x:Bind ViewModel.SelectedWorkspace.TemplateName, Mode=OneWay}"
                                            TextWrapping="Wrap"/>
                             </tkcontrols:SettingsCard>
 

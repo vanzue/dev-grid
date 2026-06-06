@@ -49,6 +49,8 @@ namespace TopToolbar.ViewModels
                 try
                 {
                     DisplayMode = toolbarConfig.DisplayMode;
+                    TopBarEnabled = toolbarConfig.TopBarEnabled;
+                    RadialMenuEnabled = toolbarConfig.RadialMenuEnabled;
                     RequireCtrlForTopBarTrigger = toolbarConfig.RequireCtrlForTopBarTrigger;
                     Theme = toolbarConfig.Theme;
                     SystemControlsEnabled = toolbarConfig.DefaultActions.SystemControlsEnabled;
@@ -168,7 +170,11 @@ namespace TopToolbar.ViewModels
             // Preserve group Id to avoid duplication on reload
             var cfg = new ToolbarConfig
             {
-                DisplayMode = DisplayMode,
+                DisplayMode = TopBarEnabled || !RadialMenuEnabled
+                    ? ToolbarDisplayMode.TopBar
+                    : ToolbarDisplayMode.RadialMenu,
+                TopBarEnabled = TopBarEnabled,
+                RadialMenuEnabled = RadialMenuEnabled,
                 RequireCtrlForTopBarTrigger = RequireCtrlForTopBarTrigger,
                 Theme = Theme,
                 DefaultActions = new DefaultActionsConfig

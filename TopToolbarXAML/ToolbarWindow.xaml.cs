@@ -170,14 +170,13 @@ namespace TopToolbar
                 await _vm.LoadAsync(this.DispatcherQueue);
                 await RunOnUiThreadAsync(SyncStaticGroupsIntoStore);
                 await RefreshDynamicProviderGroupsAsync(CancellationToken.None);
-                WarmQuickTemplatesInBackground(forceReload: true);
 
                 await RunOnUiThreadAsync(() =>
                 {
                     ApplyTheme(_vm.Theme);
                     _requireCtrlForTopBarTrigger = _vm.RequireCtrlForTopBarTrigger;
-                    ApplyDisplayMode(_vm.DisplayMode);
-                    if (_currentDisplayMode == ToolbarDisplayMode.TopBar)
+                    ApplyInvocationModes(_vm.TopBarEnabled, _vm.RadialMenuEnabled, _vm.DisplayMode);
+                    if (_topBarEnabled)
                     {
                         ResizeToContent();
                         PositionAtTopCenter();
@@ -259,7 +258,7 @@ namespace TopToolbar
             PositionAtTopCenter();
             AppWindow.Hide();
             _isVisible = false;
-            ApplyDisplayMode(_currentDisplayMode);
+            ApplyInvocationModes(_topBarEnabled, _radialMenuEnabled, _currentDisplayMode);
             SyncToastWindowTheme();
             UpdateToastWindowAnchor();
             UpdateAgentHubVisualState();
@@ -442,7 +441,6 @@ namespace TopToolbar
                 }
 
                 await RefreshDynamicProviderGroupsAsync(CancellationToken.None).ConfigureAwait(true);
-                await EnsureQuickTemplatesLoadedAsync(forceReload: true).ConfigureAwait(true);
 
                 var label = string.IsNullOrWhiteSpace(workspaceName)
                     ? normalizedWorkspaceId
@@ -452,14 +450,6 @@ namespace TopToolbar
             catch (Exception ex)
             {
                 _notificationService.ShowError("Failed to remove workspace: " + ex.Message);
-            }
-        }
-
-        private async void OnSnapshotClick(object sender, RoutedEventArgs e)
-        {
-            if (sender is Button btn)
-            {
-                await HandleSnapshotButtonClickAsync(btn).ConfigureAwait(true);
             }
         }
 
@@ -520,7 +510,6 @@ namespace TopToolbar
                 _ = DispatcherQueue?.TryEnqueue(async () =>
                 {
                     await RefreshDynamicProviderGroupsAsync(CancellationToken.None);
-                    await EnsureQuickTemplatesLoadedAsync(forceReload: true);
                 });
             };
             _settingsWindow.Activate();

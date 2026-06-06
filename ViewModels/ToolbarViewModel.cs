@@ -23,12 +23,18 @@ namespace TopToolbar.ViewModels
         private readonly HashSet<string> _staticGroupIds = new(StringComparer.OrdinalIgnoreCase);
         private CancellationTokenSource _loadCts = new();
         private ToolbarDisplayMode _displayMode = ToolbarDisplayMode.TopBar;
+        private bool _topBarEnabled = true;
+        private bool _radialMenuEnabled = true;
         private bool _requireCtrlForTopBarTrigger;
         private ToolbarTheme _theme = ToolbarTheme.WarmFrosted;
 
         public ObservableCollection<ButtonGroup> Groups { get; } = new();
 
         public ToolbarDisplayMode DisplayMode => _displayMode;
+
+        public bool TopBarEnabled => _topBarEnabled;
+
+        public bool RadialMenuEnabled => _radialMenuEnabled;
 
         public bool RequireCtrlForTopBarTrigger => _requireCtrlForTopBarTrigger;
 
@@ -68,6 +74,8 @@ namespace TopToolbar.ViewModels
             try
             {
                 _displayMode = config.DisplayMode;
+                _topBarEnabled = config.TopBarEnabled;
+                _radialMenuEnabled = config.RadialMenuEnabled;
                 _requireCtrlForTopBarTrigger = config.RequireCtrlForTopBarTrigger;
                 _theme = config.Theme;
 
@@ -107,7 +115,11 @@ namespace TopToolbar.ViewModels
         {
             var config = new ToolbarConfig
             {
-                DisplayMode = _displayMode,
+                DisplayMode = _topBarEnabled || !_radialMenuEnabled
+                    ? ToolbarDisplayMode.TopBar
+                    : ToolbarDisplayMode.RadialMenu,
+                TopBarEnabled = _topBarEnabled,
+                RadialMenuEnabled = _radialMenuEnabled,
                 RequireCtrlForTopBarTrigger = _requireCtrlForTopBarTrigger,
                 Theme = _theme,
             };

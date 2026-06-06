@@ -73,8 +73,8 @@ namespace TopToolbar
                     {
                         ApplyTheme(_vm.Theme);
                         _requireCtrlForTopBarTrigger = _vm.RequireCtrlForTopBarTrigger;
-                        ApplyDisplayMode(_vm.DisplayMode);
-                        if (_currentDisplayMode == ToolbarDisplayMode.TopBar)
+                        ApplyInvocationModes(_vm.TopBarEnabled, _vm.RadialMenuEnabled, _vm.DisplayMode);
+                        if (_topBarEnabled)
                         {
                             ResizeToContent();
                         }
