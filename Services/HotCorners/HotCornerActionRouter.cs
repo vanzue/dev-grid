@@ -107,7 +107,7 @@ namespace TopToolbar.Services.HotCorners
             }
 
             AppLogger.LogInfo($"HotCorner: snapshot saved id='{workspace.Id}', name='{workspace.Name}'.");
-            _notifications.ShowInfo($"Workspace '{workspace.Name}' captured.");
+            _notifications.ShowSuccess($"Workspace '{workspace.Name}' captured.");
 
             var handler = SnapshotCompleted;
             if (handler != null)
