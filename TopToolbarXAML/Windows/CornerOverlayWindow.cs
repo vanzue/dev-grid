@@ -603,6 +603,7 @@ namespace TopToolbar
                 const int WsExTopmost = 0x00000008;
                 const int WsExNoActivate = 0x08000000;
                 const int WsExTransparent = 0x00000020;
+                const int WsExLayered = 0x00080000;
 
                 var style = GetWindowLong(hwnd, GwlStyle);
                 style &= ~(WsCaption | WsThickFrame | WsMinimizeBox | WsMaximizeBox | WsSysMenu);
@@ -610,7 +611,7 @@ namespace TopToolbar
                 _ = SetWindowLong(hwnd, GwlStyle, style);
 
                 var exStyle = GetWindowLong(hwnd, GwlExStyle);
-                exStyle |= WsExToolWindow | WsExTopmost | WsExNoActivate | WsExTransparent;
+                exStyle |= WsExToolWindow | WsExTopmost | WsExNoActivate | WsExTransparent | WsExLayered;
                 _ = SetWindowLong(hwnd, GwlExStyle, exStyle);
 
                 _ = SetWindowPos(
@@ -730,9 +731,10 @@ namespace TopToolbar
                 const int WsExTopmost = 0x00000008;
                 const int WsExNoActivate = 0x08000000;
                 const int WsExTransparent = 0x00000020;
+                const int WsExLayered = 0x00080000;
 
                 var exStyle = GetWindowLong(hwnd, GwlExStyle);
-                var desired = exStyle | WsExToolWindow | WsExTopmost | WsExNoActivate | WsExTransparent;
+                var desired = exStyle | WsExToolWindow | WsExTopmost | WsExNoActivate | WsExTransparent | WsExLayered;
                 if (desired != exStyle)
                 {
                     _ = SetWindowLong(hwnd, GwlExStyle, desired);
