@@ -14,7 +14,7 @@ namespace TopToolbar
 {
     public sealed partial class ToolbarWindow
     {
-        private async System.Threading.Tasks.Task HandleQuickSnapshotAsync(Button triggerButton)
+        private async System.Threading.Tasks.Task HandleQuickSnapshotAsync(Button triggerButton, SnapshotFlightOrigin origin = SnapshotFlightOrigin.ToolbarButton)
         {
             if (_snapshotInProgress)
             {
@@ -24,6 +24,8 @@ namespace TopToolbar
             _snapshotInProgress = true;
             await SetButtonEnabledAsync(triggerButton, false).ConfigureAwait(true);
             UpdateSnapshotButtonState();
+
+            BeginSnapshotFlight(origin);
 
             try
             {
@@ -66,6 +68,8 @@ namespace TopToolbar
                     $"Workspace '{workspace.Name}' has been captured.");
 
                 await RefreshWorkspaceGroupAsync().ConfigureAwait(true);
+
+                await CompleteSnapshotFlightAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
             {
@@ -74,6 +78,7 @@ namespace TopToolbar
             }
             finally
             {
+                DiscardPendingSnapshotFlight();
                 await SetButtonEnabledAsync(triggerButton, true).ConfigureAwait(true);
                 _snapshotInProgress = false;
                 UpdateSnapshotButtonState();

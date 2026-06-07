@@ -42,6 +42,9 @@ namespace TopToolbar
         private bool _lastMouseDown;
         private long _lastRadialHotKeyTriggerTick;
         private long _radialShownTick;
+        private int _radialCenterScreenX;
+        private int _radialCenterScreenY;
+        private int _radialSizePx;
 
         private enum RadialEntryKind
         {
@@ -417,6 +420,10 @@ namespace TopToolbar
                     AppWindow.Show(true);
                     Activate();
                     MakeTopMost();
+
+                    _radialCenterScreenX = targetX + (sizePx / 2);
+                    _radialCenterScreenY = targetY + (sizePx / 2);
+                    _radialSizePx = sizePx;
 
                     AppLogger.LogInfo($"RadialMenu: show cursor=({cursor.X},{cursor.Y}) target=({targetX},{targetY}) size={sizePx}.");
 
@@ -1544,7 +1551,7 @@ namespace TopToolbar
                         }
                         break;
                     case RadialEntryKind.Snapshot:
-                        await HandleQuickSnapshotAsync(null).ConfigureAwait(true);
+                        await HandleQuickSnapshotAsync(null, SnapshotFlightOrigin.Ring).ConfigureAwait(true);
                         break;
                     case RadialEntryKind.Settings:
                         OpenSettingsWindow();

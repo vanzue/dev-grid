@@ -27,6 +27,7 @@ namespace TopToolbar
 
         private CapturedBitmap _pendingCapture;
         private RectInt32 _pendingMonitorPx;
+        private RectInt32 _pendingCornerTargetPx;
         private double _pendingScale = 1.0;
         private bool _hasPendingCapture;
 
@@ -88,9 +89,11 @@ namespace TopToolbar
                         var capture = ScreenCaptureService.Capture(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
                         if (capture.IsValid)
                         {
+                            var monitorPx = new RectInt32(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
                             _pendingCapture = capture;
-                            _pendingMonitorPx = new RectInt32(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
+                            _pendingMonitorPx = monitorPx;
                             _pendingScale = context.Scale > 0 ? context.Scale : 1.0;
+                            _pendingCornerTargetPx = BuildCornerTargetRect(context.Corner, monitorPx);
                             _hasPendingCapture = true;
                         }
                     }
@@ -106,117 +109,34 @@ namespace TopToolbar
 
         private async Task OnHotCornerSnapshotCompletedAsync(string workspaceId, string workspaceName)
         {
+            var hasCapture = _hasPendingCapture;
+            var capture = _pendingCapture;
+            var monitor = _pendingMonitorPx;
+            var scale = _pendingScale;
+            var target = _pendingCornerTargetPx;
+
+            _hasPendingCapture = false;
+            _pendingCapture = default;
+
+            // Keep the workspace list current, but the corner flight does not depend on it.
+            _ = RefreshWorkspaceGroupAsync();
+
+            if (!hasCapture || _photoFlight == null)
+            {
+                return;
+            }
+
             await EnqueueAsync(async () =>
             {
                 try
                 {
-                    ShowToolbar();
-                    await RefreshWorkspaceGroupAsync().ConfigureAwait(true);
-
-                    RectInt32 target = default;
-                    var found = false;
-                    for (var attempt = 0; attempt < 16 && !found; attempt++)
-                    {
-                        await DelayOnDispatcherAsync(40).ConfigureAwait(true);
-                        found = TryGetWorkspaceButtonScreenRect(workspaceId, out target);
-                    }
-
-                    if (_hasPendingCapture && found && _photoFlight != null)
-                    {
-                        var capture = _pendingCapture;
-                        var monitor = _pendingMonitorPx;
-                        var scale = _pendingScale;
-                        _hasPendingCapture = false;
-                        _pendingCapture = default;
-
-                        await _photoFlight.PlayAsync(capture, monitor, target, scale).ConfigureAwait(true);
-                    }
-                    else
-                    {
-                        _hasPendingCapture = false;
-                        _pendingCapture = default;
-                    }
+                    await _photoFlight.PlayAsync(capture, monitor, target, scale).ConfigureAwait(true);
                 }
                 catch (Exception ex)
                 {
-                    AppLogger.LogWarning($"HotCorners: flight animation failed - {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
-                    _hasPendingCapture = false;
-                    _pendingCapture = default;
+                    AppLogger.LogWarning($"HotCorners: flight animation failed - {ex.GetType().Name}: {ex.Message}");
                 }
             }).ConfigureAwait(false);
-        }
-
-        private bool TryGetWorkspaceButtonScreenRect(string workspaceId, out RectInt32 rect)
-        {
-            rect = default;
-            if (string.IsNullOrWhiteSpace(workspaceId) || ToolbarContainer == null || ToolbarContainer.XamlRoot?.Content is not UIElement contentRoot)
-            {
-                return false;
-            }
-
-            var button = FindWorkspaceButtonElement(ToolbarContainer, workspaceId);
-            if (button == null || button.ActualWidth <= 0 || button.ActualHeight <= 0)
-            {
-                return false;
-            }
-
-            try
-            {
-                var transform = button.TransformToVisual(contentRoot);
-                var topLeft = transform.TransformPoint(new Point(0, 0));
-                var scale = ToolbarContainer.XamlRoot?.RasterizationScale ?? 1.0;
-                if (scale <= 0)
-                {
-                    scale = 1.0;
-                }
-
-                var pos = AppWindow.Position;
-                var x = (int)Math.Round(pos.X + (topLeft.X * scale));
-                var y = (int)Math.Round(pos.Y + (topLeft.Y * scale));
-                var w = (int)Math.Round(button.ActualWidth * scale);
-                var h = (int)Math.Round(button.ActualHeight * scale);
-                if (w <= 0 || h <= 0)
-                {
-                    return false;
-                }
-
-                rect = new RectInt32(x, y, w, h);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogWarning($"HotCorners: button rect failed - {ex.Message}");
-                return false;
-            }
-        }
-
-        private static FrameworkElement FindWorkspaceButtonElement(DependencyObject node, string workspaceId)
-        {
-            if (node == null)
-            {
-                return null;
-            }
-
-            if (node is Button button &&
-                button.Tag is ToolbarButtonItem item &&
-                TryGetRuntimeWorkspaceId(item.Button, out var id) &&
-                string.Equals(id, workspaceId, StringComparison.OrdinalIgnoreCase))
-            {
-                return button;
-            }
-
-            var count = VisualTreeHelper.GetChildrenCount(node);
-            for (var i = 0; i < count; i++)
-            {
-                var child = VisualTreeHelper.GetChild(node, i);
-                var match = FindWorkspaceButtonElement(child, workspaceId);
-                if (match != null)
-                {
-                    return match;
-                }
-            }
-
-            return null;
         }
 
         private Task EnqueueAsync(Func<Task> work)
@@ -241,21 +161,6 @@ namespace TopToolbar
                 tcs.TrySetResult();
             }
 
-            return tcs.Task;
-        }
-
-        private Task DelayOnDispatcherAsync(int milliseconds)
-        {
-            var tcs = new TaskCompletionSource();
-            var timer = DispatcherQueue.CreateTimer();
-            timer.Interval = TimeSpan.FromMilliseconds(milliseconds);
-            timer.IsRepeating = false;
-            timer.Tick += (s, e) =>
-            {
-                timer.Stop();
-                tcs.TrySetResult();
-            };
-            timer.Start();
             return tcs.Task;
         }
 
