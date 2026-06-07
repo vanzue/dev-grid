@@ -27,6 +27,10 @@ namespace TopToolbar
         private const double GlowRadiusDip = SizeDip * 1.05;
         private const double ArcRadiusDip = SizeDip * 0.72;
         private const double ArcThicknessDip = 6.0;
+        private const double HintLabelWidthDip = 96.0;
+        private const double HintLabelInsetDip = 32.0;
+        private const double HintLabelBottomOffsetDip = 50.0;
+        private const double HintLabelTopOffsetDip = 46.0;
 
         private static readonly IntPtr HwndTopMost = new(-1);
         private const uint SwpNoSize = 0x0001;
@@ -39,18 +43,24 @@ namespace TopToolbar
         private readonly Ellipse _glow;
         private readonly Path _track;
         private readonly Path _progress;
+        private readonly TextBlock _hintLabel;
 
         private Color _accent = Color.FromArgb(0xFF, 0xD1, 0x34, 0x38);
         private Color _label = Color.FromArgb(0xFF, 0x2F, 0x3A, 0x3F);
 
         private bool _shown;
-        private HotCorner _currentCorner;
-        private bool _hasCorner;
         private bool _stylesApplied;
         private IntPtr _oldWndProc;
         private WndProcDelegate _newWndProc;
         private IntPtr _hwnd;
         private bool _disposed;
+        private double _surfaceWidthDip = SizeDip;
+        private double _surfaceHeightDip = SizeDip;
+        private double _cornerCenterXDip;
+        private double _cornerCenterYDip;
+        private double _metricScale = 1.0;
+        private DateTime _lastPlacementLogUtc = DateTime.MinValue;
+        private string _lastPlacementLogSignature = string.Empty;
 
         private delegate IntPtr WndProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
@@ -85,6 +95,16 @@ namespace TopToolbar
                 IsHitTestVisible = false,
             };
 
+            _hintLabel = new TextBlock
+            {
+                Width = HintLabelWidthDip,
+                FontSize = 12,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                IsHitTestVisible = false,
+                Opacity = 0.0,
+            };
+
             _root = new Canvas
             {
                 Width = SizeDip,
@@ -95,6 +115,7 @@ namespace TopToolbar
             _root.Children.Add(_glow);
             _root.Children.Add(_track);
             _root.Children.Add(_progress);
+            _root.Children.Add(_hintLabel);
 
             Content = _root;
 
@@ -134,6 +155,52 @@ namespace TopToolbar
             ShowAt(state.Corner, state.MonitorBounds, state.Scale, state.Progress);
         }
 
+        public void ShowHint(HotCorner corner, DisplayRect bounds, double scale, string label)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            if (scale <= 0)
+            {
+                scale = 1.0;
+            }
+
+            var sizePx = (int)Math.Round(SizeDip * scale);
+            if (sizePx <= 0)
+            {
+                return;
+            }
+
+            try
+            {
+                ResolvePlacement(corner, bounds, sizePx, out var x, out var y);
+                AppWindow.MoveAndResize(new RectInt32(x, y, sizePx, sizePx));
+                if (!_shown)
+                {
+                    _root.Opacity = 0.0;
+                    AppWindow.Show(false);
+                    _shown = true;
+                }
+
+                ConfigureSurfaceFromActualWindow("hint", corner, bounds, scale, x, y, sizePx);
+
+                _root.Opacity = 1.0;
+                ResetRootTransform();
+                BuildGeometry(corner);
+                UpdateProgress(corner, 0.0);
+                _hintLabel.Text = string.IsNullOrWhiteSpace(label) ? string.Empty : label.Trim();
+                _hintLabel.Opacity = string.IsNullOrWhiteSpace(_hintLabel.Text) ? 0.0 : 0.46;
+                PositionHintLabel(corner);
+                MakeTopMost();
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"CornerOverlay: hint show failed - {ex.Message}");
+            }
+        }
+
         private void ShowAt(HotCorner corner, DisplayRect bounds, double scale, double progress)
         {
             if (scale <= 0)
@@ -147,45 +214,25 @@ namespace TopToolbar
                 return;
             }
 
-            int x;
-            int y;
-            switch (corner)
-            {
-                case HotCorner.TopLeft:
-                    x = bounds.Left;
-                    y = bounds.Top;
-                    break;
-                case HotCorner.TopRight:
-                    x = bounds.Right - sizePx;
-                    y = bounds.Top;
-                    break;
-                case HotCorner.BottomLeft:
-                    x = bounds.Left;
-                    y = bounds.Bottom - sizePx;
-                    break;
-                default:
-                    x = bounds.Right - sizePx;
-                    y = bounds.Bottom - sizePx;
-                    break;
-            }
-
-            if (!_hasCorner || _currentCorner != corner)
-            {
-                _currentCorner = corner;
-                _hasCorner = true;
-                BuildGeometry(corner);
-            }
-
-            UpdateProgress(corner, progress);
-
             try
             {
+                ResolvePlacement(corner, bounds, sizePx, out var x, out var y);
                 AppWindow.MoveAndResize(new RectInt32(x, y, sizePx, sizePx));
+                var wasHidden = !_shown;
                 if (!_shown)
                 {
                     _root.Opacity = 0.0;
                     AppWindow.Show(false);
                     _shown = true;
+                }
+
+                ConfigureSurfaceFromActualWindow("hover", corner, bounds, scale, x, y, sizePx);
+
+                BuildGeometry(corner);
+                UpdateProgress(corner, progress);
+
+                if (wasHidden)
+                {
                     PlayEntranceFade();
                 }
 
@@ -209,38 +256,13 @@ namespace TopToolbar
                     EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
                 };
 
-                var scale = new DoubleAnimation
-                {
-                    From = 0.7,
-                    To = 1.0,
-                    Duration = new Duration(TimeSpan.FromMilliseconds(220)),
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-                };
-
-                _root.RenderTransformOrigin = new Point(0.5, 0.5);
-                var transform = new ScaleTransform();
-                _root.RenderTransform = transform;
+                ResetRootTransform();
 
                 var storyboard = new Storyboard();
 
                 Storyboard.SetTarget(fade, _root);
                 Storyboard.SetTargetProperty(fade, "Opacity");
                 storyboard.Children.Add(fade);
-
-                Storyboard.SetTarget(scale, transform);
-                Storyboard.SetTargetProperty(scale, "ScaleX");
-                storyboard.Children.Add(scale);
-
-                var scaleY = new DoubleAnimation
-                {
-                    From = 0.7,
-                    To = 1.0,
-                    Duration = new Duration(TimeSpan.FromMilliseconds(220)),
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-                };
-                Storyboard.SetTarget(scaleY, transform);
-                Storyboard.SetTargetProperty(scaleY, "ScaleY");
-                storyboard.Children.Add(scaleY);
 
                 storyboard.Begin();
             }
@@ -250,7 +272,12 @@ namespace TopToolbar
             }
         }
 
-        private void Hide()
+        private void ResetRootTransform()
+        {
+            _root.RenderTransform = null;
+        }
+
+        public void Hide()
         {
             if (!_shown)
             {
@@ -267,14 +294,131 @@ namespace TopToolbar
             }
         }
 
+        private static void ResolvePlacement(HotCorner corner, DisplayRect bounds, int sizePx, out int x, out int y)
+        {
+            switch (corner)
+            {
+                case HotCorner.TopLeft:
+                    x = bounds.Left;
+                    y = bounds.Top;
+                    break;
+                case HotCorner.TopRight:
+                    x = bounds.Right - sizePx;
+                    y = bounds.Top;
+                    break;
+                case HotCorner.BottomLeft:
+                    x = bounds.Left;
+                    y = bounds.Bottom - sizePx;
+                    break;
+                default:
+                    x = bounds.Right - sizePx;
+                    y = bounds.Bottom - sizePx;
+                    break;
+            }
+        }
+
+        private void ConfigureSurfaceFromActualWindow(
+            string mode,
+            HotCorner corner,
+            DisplayRect bounds,
+            double targetScale,
+            int requestedX,
+            int requestedY,
+            int requestedSizePx)
+        {
+            var xamlScale = ResolveXamlScale(targetScale);
+            var actualPosition = AppWindow?.Position ?? new PointInt32(0, 0);
+            var actualSize = AppWindow?.Size ?? new SizeInt32(requestedSizePx, requestedSizePx);
+
+            var widthPx = actualSize.Width > 0 ? actualSize.Width : requestedSizePx;
+            var heightPx = actualSize.Height > 0 ? actualSize.Height : requestedSizePx;
+
+            _surfaceWidthDip = Math.Max(1.0, widthPx / xamlScale);
+            _surfaceHeightDip = Math.Max(1.0, heightPx / xamlScale);
+            _metricScale = Math.Max(0.1, targetScale / xamlScale);
+
+            _root.Width = _surfaceWidthDip;
+            _root.Height = _surfaceHeightDip;
+
+            var targetX = corner == HotCorner.TopRight || corner == HotCorner.BottomRight
+                ? bounds.Right
+                : bounds.Left;
+            var targetY = corner == HotCorner.BottomLeft || corner == HotCorner.BottomRight
+                ? bounds.Bottom
+                : bounds.Top;
+
+            _cornerCenterXDip = Math.Clamp((targetX - actualPosition.X) / xamlScale, 0.0, _surfaceWidthDip);
+            _cornerCenterYDip = Math.Clamp((targetY - actualPosition.Y) / xamlScale, 0.0, _surfaceHeightDip);
+
+            LogPlacement(
+                mode,
+                corner,
+                bounds,
+                targetScale,
+                xamlScale,
+                requestedX,
+                requestedY,
+                requestedSizePx,
+                actualPosition,
+                actualSize,
+                targetX,
+                targetY);
+        }
+
+        private double ResolveXamlScale(double fallbackScale)
+        {
+            var scale = _root.XamlRoot?.RasterizationScale ?? fallbackScale;
+            if (scale <= 0)
+            {
+                scale = fallbackScale;
+            }
+
+            return scale > 0 ? scale : 1.0;
+        }
+
+        private double Scaled(double value)
+        {
+            return value * _metricScale;
+        }
+
+        private void LogPlacement(
+            string mode,
+            HotCorner corner,
+            DisplayRect bounds,
+            double targetScale,
+            double xamlScale,
+            int requestedX,
+            int requestedY,
+            int requestedSizePx,
+            PointInt32 actualPosition,
+            SizeInt32 actualSize,
+            int targetX,
+            int targetY)
+        {
+            var signature =
+                $"{mode}|{corner}|req={requestedX},{requestedY},{requestedSizePx}|actual={actualPosition.X},{actualPosition.Y},{actualSize.Width},{actualSize.Height}|center={_cornerCenterXDip:F1},{_cornerCenterYDip:F1}|scale={targetScale:F3},{xamlScale:F3}";
+            var now = DateTime.UtcNow;
+            if (string.Equals(signature, _lastPlacementLogSignature, StringComparison.Ordinal) &&
+                (now - _lastPlacementLogUtc).TotalMilliseconds < 1000)
+            {
+                return;
+            }
+
+            _lastPlacementLogSignature = signature;
+            _lastPlacementLogUtc = now;
+
+            AppLogger.LogInfo(
+                $"CornerOverlayPlacement: mode={mode}, corner={corner}, monitor=({bounds.Left},{bounds.Top},{bounds.Width},{bounds.Height}) rightBottom=({bounds.Right},{bounds.Bottom}), targetScreen=({targetX},{targetY}), requestedWindow=({requestedX},{requestedY},{requestedSizePx},{requestedSizePx}), actualWindow=({actualPosition.X},{actualPosition.Y},{actualSize.Width},{actualSize.Height}), targetScale={targetScale:F3}, xamlScale={xamlScale:F3}, metricScale={_metricScale:F3}, surfaceDip=({_surfaceWidthDip:F1},{_surfaceHeightDip:F1}), cornerCenterDip=({_cornerCenterXDip:F1},{_cornerCenterYDip:F1}), rootDip=({_root.Width:F1},{_root.Height:F1})");
+        }
+
         private (double cx, double cy, double startDeg) CornerGeometry(HotCorner corner)
         {
             return corner switch
             {
-                HotCorner.TopLeft => (0.0, 0.0, 0.0),
-                HotCorner.TopRight => (SizeDip, 0.0, 90.0),
-                HotCorner.BottomLeft => (0.0, SizeDip, 270.0),
-                _ => (SizeDip, SizeDip, 180.0),
+                HotCorner.TopLeft => (_cornerCenterXDip, _cornerCenterYDip, 0.0),
+                HotCorner.TopRight => (_cornerCenterXDip, _cornerCenterYDip, 90.0),
+                HotCorner.BottomLeft => (_cornerCenterXDip, _cornerCenterYDip, 270.0),
+                _ => (_cornerCenterXDip, _cornerCenterYDip, 180.0),
             };
         }
 
@@ -282,11 +426,16 @@ namespace TopToolbar
         {
             var (cx, cy, _) = CornerGeometry(corner);
 
-            Canvas.SetLeft(_glow, cx - GlowRadiusDip);
-            Canvas.SetTop(_glow, cy - GlowRadiusDip);
+            var glowRadius = Scaled(GlowRadiusDip);
+            _glow.Width = glowRadius * 2.0;
+            _glow.Height = glowRadius * 2.0;
+            Canvas.SetLeft(_glow, cx - glowRadius);
+            Canvas.SetTop(_glow, cy - glowRadius);
 
             // Full quarter track arc (faint).
-            _track.Data = BuildArc(corner, 1.0);
+            _track.StrokeThickness = Scaled(ArcThicknessDip);
+            _progress.StrokeThickness = Scaled(ArcThicknessDip);
+            _track.Data = BuildArc(corner, 1.0, Scaled(ArcRadiusDip));
         }
 
         private void UpdateProgress(HotCorner corner, double progress)
@@ -302,10 +451,11 @@ namespace TopToolbar
 
             _track.Opacity = 0.18;
             _progress.Opacity = 1.0;
-            _progress.Data = progress <= 0.001 ? null : BuildArc(corner, progress);
+            _progress.Data = progress <= 0.001 ? null : BuildArc(corner, progress, Scaled(ArcRadiusDip));
+            _hintLabel.Opacity = 0.0;
         }
 
-        private Geometry BuildArc(HotCorner corner, double fraction)
+        private Geometry BuildArc(HotCorner corner, double fraction, double radiusDip)
         {
             fraction = Math.Clamp(fraction, 0.0, 1.0);
             var (cx, cy, startDeg) = CornerGeometry(corner);
@@ -315,17 +465,17 @@ namespace TopToolbar
             var endRad = (startDeg + sweep) * Math.PI / 180.0;
 
             var start = new Point(
-                cx + (ArcRadiusDip * Math.Cos(startRad)),
-                cy + (ArcRadiusDip * Math.Sin(startRad)));
+                cx + (radiusDip * Math.Cos(startRad)),
+                cy + (radiusDip * Math.Sin(startRad)));
             var end = new Point(
-                cx + (ArcRadiusDip * Math.Cos(endRad)),
-                cy + (ArcRadiusDip * Math.Sin(endRad)));
+                cx + (radiusDip * Math.Cos(endRad)),
+                cy + (radiusDip * Math.Sin(endRad)));
 
             var figure = new PathFigure { StartPoint = start, IsClosed = false };
             figure.Segments.Add(new ArcSegment
             {
                 Point = end,
-                Size = new Size(ArcRadiusDip, ArcRadiusDip),
+                Size = new Size(radiusDip, radiusDip),
                 SweepDirection = SweepDirection.Clockwise,
                 IsLargeArc = false,
                 RotationAngle = 0,
@@ -334,6 +484,29 @@ namespace TopToolbar
             var geometry = new PathGeometry();
             geometry.Figures.Add(figure);
             return geometry;
+        }
+
+        private void PositionHintLabel(HotCorner corner)
+        {
+            _hintLabel.TextAlignment =
+                corner == HotCorner.TopRight || corner == HotCorner.BottomRight
+                    ? TextAlignment.Right
+                    : TextAlignment.Left;
+
+            var labelWidth = Scaled(HintLabelWidthDip);
+            var labelInset = Scaled(HintLabelInsetDip);
+            _hintLabel.Width = labelWidth;
+
+            var left = corner == HotCorner.TopRight || corner == HotCorner.BottomRight
+                ? _cornerCenterXDip - labelInset - labelWidth
+                : _cornerCenterXDip + labelInset;
+
+            var top = corner == HotCorner.BottomLeft || corner == HotCorner.BottomRight
+                ? _cornerCenterYDip - Scaled(HintLabelBottomOffsetDip)
+                : _cornerCenterYDip + Scaled(HintLabelTopOffsetDip);
+
+            Canvas.SetLeft(_hintLabel, Math.Clamp(left, 0.0, Math.Max(0.0, _surfaceWidthDip - labelWidth)));
+            Canvas.SetTop(_hintLabel, Math.Clamp(top, 0.0, Math.Max(0.0, _surfaceHeightDip - Scaled(HintLabelBottomOffsetDip))));
         }
 
         private void RefreshBrushes()
@@ -352,6 +525,7 @@ namespace TopToolbar
 
             _track.Stroke = new SolidColorBrush(WithAlpha(_label, 0xFF));
             _progress.Stroke = new SolidColorBrush(WithAlpha(_accent, 0xFF));
+            _hintLabel.Foreground = new SolidColorBrush(WithAlpha(_label, 0xCC));
         }
 
         private static Color WithAlpha(Color color, byte alpha)
@@ -453,6 +627,7 @@ namespace TopToolbar
                 _ = DwmSetWindowAttribute(hwnd, DwmwaBorderColor, ref dwmColorNone, sizeof(uint));
 
                 _stylesApplied = true;
+                EnsureClickThroughStyles(hwnd);
             }
             catch (Exception ex)
             {
@@ -530,6 +705,7 @@ namespace TopToolbar
                 return;
             }
 
+            EnsureClickThroughStyles(hwnd);
             _ = SetWindowPos(
                 hwnd,
                 HwndTopMost,
@@ -538,6 +714,42 @@ namespace TopToolbar
                 0,
                 0,
                 SwpNoMove | SwpNoSize | SwpNoActivate | SwpShowWindow);
+        }
+
+        private void EnsureClickThroughStyles(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero)
+            {
+                return;
+            }
+
+            try
+            {
+                const int GwlExStyle = -20;
+                const int WsExToolWindow = 0x00000080;
+                const int WsExTopmost = 0x00000008;
+                const int WsExNoActivate = 0x08000000;
+                const int WsExTransparent = 0x00000020;
+
+                var exStyle = GetWindowLong(hwnd, GwlExStyle);
+                var desired = exStyle | WsExToolWindow | WsExTopmost | WsExNoActivate | WsExTransparent;
+                if (desired != exStyle)
+                {
+                    _ = SetWindowLong(hwnd, GwlExStyle, desired);
+                    _ = SetWindowPos(
+                        hwnd,
+                        HwndTopMost,
+                        0,
+                        0,
+                        0,
+                        0,
+                        SwpNoMove | SwpNoSize | SwpNoActivate | SwpShowWindow | SwpFrameChanged);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"CornerOverlay: click-through style restore failed - {ex.Message}");
+            }
         }
 
         public void Dispose()

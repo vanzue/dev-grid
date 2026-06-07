@@ -316,7 +316,7 @@
                     <!-- Fixed General item -->
                     <ListViewItem Grid.Row="1"
                                   x:Name="GeneralItem"
-                                  IsSelected="{x:Bind ViewModel.IsGeneralSelected, Mode=TwoWay}"
+                                  IsSelected="{x:Bind ViewModel.IsGeneralSelected, Mode=OneWay}"
                                   Tapped="OnGeneralItemTapped"
                                   Style="{StaticResource ToolbarListItemStyle}"
                                   Padding="4,6">
@@ -345,7 +345,7 @@
                     <!-- Fixed Hot Corners item -->
                     <ListViewItem Grid.Row="2"
                                   x:Name="HotCornersItem"
-                                  IsSelected="{x:Bind ViewModel.IsHotCornersSelected, Mode=TwoWay}"
+                                  IsSelected="{x:Bind ViewModel.IsHotCornersSelected, Mode=OneWay}"
                                   Tapped="OnHotCornersItemTapped"
                                   Style="{StaticResource ToolbarListItemStyle}"
                                   Padding="4,6">
@@ -358,11 +358,24 @@
                                     Height="28"
                                     CornerRadius="8"
                                     Background="{ThemeResource SubtleFillColorSecondaryBrush}">
-                                <FontIcon FontFamily="Segoe MDL2 Assets"
-                                          Glyph="&#xE7C4;"
-                                          FontSize="14"
-                                          VerticalAlignment="Center"
-                                          HorizontalAlignment="Center"/>
+                                <Grid Width="18"
+                                      Height="18"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Center">
+                                    <Path Data="M 4,14 A 10,10 0 0 1 14,4"
+                                          Stroke="{ThemeResource TextFillColorPrimaryBrush}"
+                                          StrokeThickness="1.6"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"
+                                          Opacity="0.62"/>
+                                    <Ellipse Width="4"
+                                             Height="4"
+                                             Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                             HorizontalAlignment="Right"
+                                             VerticalAlignment="Bottom"
+                                             Margin="0,0,1,1"
+                                             Opacity="0.9"/>
+                                </Grid>
                             </Border>
                             <TextBlock Grid.Column="1"
                                        Text="Hot Corners"
@@ -752,12 +765,30 @@
                                         CornerRadius="14"
                                         Background="{StaticResource SettingsAccentGradientBrush}"
                                         VerticalAlignment="Top">
-                                    <FontIcon FontFamily="Segoe MDL2 Assets"
-                                              Glyph="&#xE7C4;"
-                                              Foreground="White"
-                                              FontSize="21"
-                                              HorizontalAlignment="Center"
-                                              VerticalAlignment="Center"/>
+                                    <Grid Width="26"
+                                          Height="26"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center">
+                                        <Path Data="M 5,21 A 16,16 0 0 1 21,5"
+                                              Stroke="White"
+                                              StrokeThickness="2.2"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              Opacity="0.72"/>
+                                        <Path Data="M 9,21 A 12,12 0 0 1 21,9"
+                                              Stroke="White"
+                                              StrokeThickness="1.2"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              Opacity="0.36"/>
+                                        <Ellipse Width="6"
+                                                 Height="6"
+                                                 Fill="White"
+                                                 HorizontalAlignment="Right"
+                                                 VerticalAlignment="Bottom"
+                                                 Margin="0,0,1,1"
+                                                 Opacity="0.88"/>
+                                    </Grid>
                                 </Border>
                                 <StackPanel Grid.Column="1"
                                             Spacing="5"
@@ -777,7 +808,21 @@
                                 <StackPanel Spacing="10" HorizontalAlignment="Stretch">
                                     <StackPanel Spacing="2">
                                         <StackPanel Orientation="Horizontal" Spacing="10">
-                                            <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE7C4;" FontSize="15"/>
+                                            <Grid Width="18" Height="18" VerticalAlignment="Center">
+                                                <Path Data="M 4,14 A 10,10 0 0 1 14,4"
+                                                      Stroke="{ThemeResource TextFillColorPrimaryBrush}"
+                                                      StrokeThickness="1.6"
+                                                      StrokeStartLineCap="Round"
+                                                      StrokeEndLineCap="Round"
+                                                      Opacity="0.62"/>
+                                                <Ellipse Width="4"
+                                                         Height="4"
+                                                         Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                         HorizontalAlignment="Right"
+                                                         VerticalAlignment="Bottom"
+                                                         Margin="0,0,1,1"
+                                                         Opacity="0.9"/>
+                                            </Grid>
                                             <TextBlock Text="Hot corners"
                                                        FontSize="13"
                                                        FontWeight="SemiBold"/>
@@ -795,7 +840,21 @@
                                                             ContentAlignment="Right">
                                         <tkcontrols:SettingsCard.Header>
                                             <StackPanel Orientation="Horizontal" Spacing="10">
-                                                <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE7C4;" FontSize="14"/>
+                                                <Grid Width="18" Height="18" VerticalAlignment="Center">
+                                                    <Path Data="M 4,14 A 10,10 0 0 1 14,4"
+                                                          Stroke="{ThemeResource TextFillColorPrimaryBrush}"
+                                                          StrokeThickness="1.6"
+                                                          StrokeStartLineCap="Round"
+                                                          StrokeEndLineCap="Round"
+                                                          Opacity="0.62"/>
+                                                    <Ellipse Width="4"
+                                                             Height="4"
+                                                             Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                             HorizontalAlignment="Right"
+                                                             VerticalAlignment="Bottom"
+                                                             Margin="0,0,1,1"
+                                                             Opacity="0.9"/>
+                                                </Grid>
                                                 <TextBlock Text="Enabled"/>
                                             </StackPanel>
                                         </tkcontrols:SettingsCard.Header>
@@ -814,18 +873,51 @@
                                             CornerRadius="12"
                                             Padding="2">
                                         <StackPanel Spacing="0">
+                                            <tkcontrols:SettingsCard Description="Show subtle translucent arcs in configured corners as a visual hint."
+                                                                    ContentAlignment="Right">
+                                                <tkcontrols:SettingsCard.Header>
+                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                        <Grid Width="18" Height="18" VerticalAlignment="Center">
+                                                            <Path Data="M 4,14 A 10,10 0 0 1 14,4"
+                                                                  Stroke="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                  StrokeThickness="1.6"
+                                                                  StrokeStartLineCap="Round"
+                                                                  StrokeEndLineCap="Round"
+                                                                  Opacity="0.42"/>
+                                                            <Ellipse Width="4"
+                                                                     Height="4"
+                                                                     Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                                     HorizontalAlignment="Right"
+                                                                     VerticalAlignment="Bottom"
+                                                                     Margin="0,0,1,1"
+                                                                     Opacity="0.72"/>
+                                                        </Grid>
+                                                        <TextBlock Text="Corner hints"/>
+                                                    </StackPanel>
+                                                </tkcontrols:SettingsCard.Header>
+                                                <ToggleSwitch HorizontalAlignment="Right"
+                                                              IsOn="{x:Bind ViewModel.HotCornerShowHints, Mode=TwoWay}"
+                                                              OnContent=""
+                                                              OffContent=""/>
+                                            </tkcontrols:SettingsCard>
+
                                             <tkcontrols:SettingsCard Description="Action when the cursor reaches the top-left corner.">
                                                 <tkcontrols:SettingsCard.Header>
                                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <Grid Width="16" Height="16" VerticalAlignment="Center">
-                                                            <Border BorderBrush="{ThemeResource TextFillColorPrimaryBrush}"
-                                                                    BorderThickness="1"
-                                                                    Opacity="0.84"/>
-                                                            <Border Width="6"
-                                                                    Height="6"
-                                                                    Background="{ThemeResource TextFillColorPrimaryBrush}"
-                                                                    HorizontalAlignment="Left"
-                                                                    VerticalAlignment="Top"/>
+                                                        <Grid Width="18" Height="18" VerticalAlignment="Center">
+                                                            <Path Data="M 14,4 A 10,10 0 0 1 4,14"
+                                                                  Stroke="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                  StrokeThickness="1.6"
+                                                                  StrokeStartLineCap="Round"
+                                                                  StrokeEndLineCap="Round"
+                                                                  Opacity="0.62"/>
+                                                            <Ellipse Width="4"
+                                                                     Height="4"
+                                                                     Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                                     HorizontalAlignment="Left"
+                                                                     VerticalAlignment="Top"
+                                                                     Margin="1,1,0,0"
+                                                                     Opacity="0.9"/>
                                                         </Grid>
                                                         <TextBlock Text="Top-left"/>
                                                     </StackPanel>
@@ -845,15 +937,20 @@
                                             <tkcontrols:SettingsCard Description="Action when the cursor reaches the top-right corner.">
                                                 <tkcontrols:SettingsCard.Header>
                                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <Grid Width="16" Height="16" VerticalAlignment="Center">
-                                                            <Border BorderBrush="{ThemeResource TextFillColorPrimaryBrush}"
-                                                                    BorderThickness="1"
-                                                                    Opacity="0.84"/>
-                                                            <Border Width="6"
-                                                                    Height="6"
-                                                                    Background="{ThemeResource TextFillColorPrimaryBrush}"
-                                                                    HorizontalAlignment="Right"
-                                                                    VerticalAlignment="Top"/>
+                                                        <Grid Width="18" Height="18" VerticalAlignment="Center">
+                                                            <Path Data="M 4,4 A 10,10 0 0 0 14,14"
+                                                                  Stroke="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                  StrokeThickness="1.6"
+                                                                  StrokeStartLineCap="Round"
+                                                                  StrokeEndLineCap="Round"
+                                                                  Opacity="0.62"/>
+                                                            <Ellipse Width="4"
+                                                                     Height="4"
+                                                                     Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                                     HorizontalAlignment="Right"
+                                                                     VerticalAlignment="Top"
+                                                                     Margin="0,1,1,0"
+                                                                     Opacity="0.9"/>
                                                         </Grid>
                                                         <TextBlock Text="Top-right"/>
                                                     </StackPanel>
@@ -873,15 +970,20 @@
                                             <tkcontrols:SettingsCard Description="Action when the cursor reaches the bottom-left corner.">
                                                 <tkcontrols:SettingsCard.Header>
                                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <Grid Width="16" Height="16" VerticalAlignment="Center">
-                                                            <Border BorderBrush="{ThemeResource TextFillColorPrimaryBrush}"
-                                                                    BorderThickness="1"
-                                                                    Opacity="0.84"/>
-                                                            <Border Width="6"
-                                                                    Height="6"
-                                                                    Background="{ThemeResource TextFillColorPrimaryBrush}"
-                                                                    HorizontalAlignment="Left"
-                                                                    VerticalAlignment="Bottom"/>
+                                                        <Grid Width="18" Height="18" VerticalAlignment="Center">
+                                                            <Path Data="M 4,4 A 10,10 0 0 1 14,14"
+                                                                  Stroke="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                  StrokeThickness="1.6"
+                                                                  StrokeStartLineCap="Round"
+                                                                  StrokeEndLineCap="Round"
+                                                                  Opacity="0.62"/>
+                                                            <Ellipse Width="4"
+                                                                     Height="4"
+                                                                     Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                                     HorizontalAlignment="Left"
+                                                                     VerticalAlignment="Bottom"
+                                                                     Margin="1,0,0,1"
+                                                                     Opacity="0.9"/>
                                                         </Grid>
                                                         <TextBlock Text="Bottom-left"/>
                                                     </StackPanel>
@@ -901,15 +1003,20 @@
                                             <tkcontrols:SettingsCard Description="Action when the cursor reaches the bottom-right corner.">
                                                 <tkcontrols:SettingsCard.Header>
                                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <Grid Width="16" Height="16" VerticalAlignment="Center">
-                                                            <Border BorderBrush="{ThemeResource TextFillColorPrimaryBrush}"
-                                                                    BorderThickness="1"
-                                                                    Opacity="0.84"/>
-                                                            <Border Width="6"
-                                                                    Height="6"
-                                                                    Background="{ThemeResource TextFillColorPrimaryBrush}"
-                                                                    HorizontalAlignment="Right"
-                                                                    VerticalAlignment="Bottom"/>
+                                                        <Grid Width="18" Height="18" VerticalAlignment="Center">
+                                                            <Path Data="M 4,14 A 10,10 0 0 1 14,4"
+                                                                  Stroke="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                  StrokeThickness="1.6"
+                                                                  StrokeStartLineCap="Round"
+                                                                  StrokeEndLineCap="Round"
+                                                                  Opacity="0.62"/>
+                                                            <Ellipse Width="4"
+                                                                     Height="4"
+                                                                     Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                                     HorizontalAlignment="Right"
+                                                                     VerticalAlignment="Bottom"
+                                                                     Margin="0,0,1,1"
+                                                                     Opacity="0.9"/>
                                                         </Grid>
                                                         <TextBlock Text="Bottom-right"/>
                                                     </StackPanel>

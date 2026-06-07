@@ -16,6 +16,7 @@ namespace TopToolbar.ViewModels
         private bool _hotCornersEnabled;
         private double _hotCornerDwellMilliseconds = 250;
         private bool _hotCornerDisableOnFullScreen = true;
+        private bool _hotCornerShowHints = true;
         private int _hotCornerZonePx = 6;
         private int _topLeftActionIndex;
         private int _topRightActionIndex;
@@ -53,6 +54,12 @@ namespace TopToolbar.ViewModels
         {
             get => _hotCornerDisableOnFullScreen;
             set => SetHotCornerProperty(ref _hotCornerDisableOnFullScreen, value);
+        }
+
+        public bool HotCornerShowHints
+        {
+            get => _hotCornerShowHints;
+            set => SetHotCornerProperty(ref _hotCornerShowHints, value);
         }
 
         public int TopLeftActionIndex
@@ -101,6 +108,7 @@ namespace TopToolbar.ViewModels
             HotCornersEnabled = config.Enabled;
             HotCornerDwellMilliseconds = config.DwellMilliseconds <= 0 ? 250 : config.DwellMilliseconds;
             HotCornerDisableOnFullScreen = config.DisableOnFullScreen;
+            HotCornerShowHints = config.ShowCornerHints;
             _hotCornerZonePx = config.HotZonePx <= 0 ? 6 : config.HotZonePx;
 
             TopLeftActionIndex = ActionIdToIndex(GetAction(config, HotCorner.TopLeft));
@@ -116,6 +124,7 @@ namespace TopToolbar.ViewModels
                 Enabled = HotCornersEnabled,
                 DwellMilliseconds = (int)Math.Round(HotCornerDwellMilliseconds),
                 HotZonePx = _hotCornerZonePx,
+                ShowCornerHints = HotCornerShowHints,
                 DisableOnFullScreen = HotCornerDisableOnFullScreen,
                 Actions = new Dictionary<HotCorner, string>
                 {

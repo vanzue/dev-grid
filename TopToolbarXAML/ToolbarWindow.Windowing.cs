@@ -56,6 +56,8 @@ namespace TopToolbar
                     {
                         PositionAtTopCenter();
                     }
+
+                    _ = ApplyHotCornersConfigAsync();
                 }
                 catch
                 {

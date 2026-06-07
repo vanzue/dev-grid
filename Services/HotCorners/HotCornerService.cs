@@ -4,10 +4,12 @@
 
 using System;
 using System.Runtime.InteropServices;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Dispatching;
 using TopToolbar.Logging;
 using TopToolbar.Models;
 using TopToolbar.Services.Display;
+using Windows.Graphics;
 
 namespace TopToolbar.Services.HotCorners
 {
@@ -69,6 +71,8 @@ namespace TopToolbar.Services.HotCorners
         private bool _latched;
         private double _lastProgress = -1;
         private bool _disposed;
+        private DateTime _lastResolveLogUtc = DateTime.MinValue;
+        private string _lastResolveLogSignature = string.Empty;
 
         public HotCornerService(DispatcherQueue dispatcher, DisplayManager displayManager)
         {
@@ -182,6 +186,11 @@ namespace TopToolbar.Services.HotCorners
             bounds = default;
             scale = 1.0;
             var zone = Math.Max(1, _config.HotZonePx);
+            if (TryResolveDisplayAreaCorner(x, y, zone, out bounds, out scale, out var displayAreaCorner))
+            {
+                return displayAreaCorner;
+            }
+
             var monitors = _displayManager.GetSnapshot();
 
             foreach (var monitor in monitors)
@@ -232,10 +241,150 @@ namespace TopToolbar.Services.HotCorners
 
                 bounds = rect;
                 scale = monitor.Dpi > 0 ? monitor.Dpi / 96.0 : 1.0;
+                LogResolvedCorner(x, y, zone, monitor, corner.Value, scale, nearLeft, nearRight, nearTop, nearBottom);
                 return corner;
             }
 
             return null;
+        }
+
+        private bool TryResolveDisplayAreaCorner(int x, int y, int zone, out DisplayRect bounds, out double scale, out HotCorner? corner)
+        {
+            bounds = default;
+            scale = 1.0;
+            corner = null;
+
+            try
+            {
+                var area = DisplayArea.GetFromPoint(new PointInt32(x, y), DisplayAreaFallback.None);
+                if (area == null)
+                {
+                    return false;
+                }
+
+                var outer = area.OuterBounds;
+                if (outer.Width <= 0 || outer.Height <= 0)
+                {
+                    return false;
+                }
+
+                var rect = new DisplayRect(outer.X, outer.Y, outer.Width, outer.Height);
+                corner = ResolveCornerInBounds(x, y, zone, rect, out var nearLeft, out var nearRight, out var nearTop, out var nearBottom);
+                if (corner == null)
+                {
+                    return true;
+                }
+
+                if (!IsMapped(corner.Value))
+                {
+                    corner = null;
+                    return true;
+                }
+
+                bounds = rect;
+                LogResolvedDisplayAreaCorner(x, y, zone, area, rect, corner.Value, nearLeft, nearRight, nearTop, nearBottom);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"HotCornerResolve: DisplayArea resolve failed - {ex.Message}");
+                return false;
+            }
+        }
+
+        private static HotCorner? ResolveCornerInBounds(
+            int x,
+            int y,
+            int zone,
+            DisplayRect rect,
+            out bool nearLeft,
+            out bool nearRight,
+            out bool nearTop,
+            out bool nearBottom)
+        {
+            nearLeft = x <= rect.Left + zone;
+            nearRight = x >= rect.Right - zone;
+            nearTop = y <= rect.Top + zone;
+            nearBottom = y >= rect.Bottom - zone;
+
+            if (nearTop && nearLeft)
+            {
+                return HotCorner.TopLeft;
+            }
+
+            if (nearTop && nearRight)
+            {
+                return HotCorner.TopRight;
+            }
+
+            if (nearBottom && nearLeft)
+            {
+                return HotCorner.BottomLeft;
+            }
+
+            if (nearBottom && nearRight)
+            {
+                return HotCorner.BottomRight;
+            }
+
+            return null;
+        }
+
+        private void LogResolvedCorner(
+            int cursorX,
+            int cursorY,
+            int zone,
+            DisplayMonitor monitor,
+            HotCorner corner,
+            double scale,
+            bool nearLeft,
+            bool nearRight,
+            bool nearTop,
+            bool nearBottom)
+        {
+            var rect = monitor.Bounds;
+            var signature =
+                $"{corner}|cursor={cursorX},{cursorY}|monitor={monitor.Index}:{rect.Left},{rect.Top},{rect.Width},{rect.Height}|zone={zone}";
+            var now = DateTime.UtcNow;
+            if (string.Equals(signature, _lastResolveLogSignature, StringComparison.Ordinal) &&
+                (now - _lastResolveLogUtc).TotalMilliseconds < 1000)
+            {
+                return;
+            }
+
+            _lastResolveLogSignature = signature;
+            _lastResolveLogUtc = now;
+
+            AppLogger.LogInfo(
+                $"HotCornerResolve: cursor=({cursorX},{cursorY}), zone={zone}, corner={corner}, monitor[{monitor.Index}] id='{monitor.Id}', dpi={monitor.Dpi}, scale={scale:F3}, bounds=({rect.Left},{rect.Top},{rect.Width},{rect.Height}) rb=({rect.Right},{rect.Bottom}), near=(left:{nearLeft},right:{nearRight},top:{nearTop},bottom:{nearBottom}).");
+        }
+
+        private void LogResolvedDisplayAreaCorner(
+            int cursorX,
+            int cursorY,
+            int zone,
+            DisplayArea area,
+            DisplayRect rect,
+            HotCorner corner,
+            bool nearLeft,
+            bool nearRight,
+            bool nearTop,
+            bool nearBottom)
+        {
+            var signature =
+                $"displayArea|{corner}|cursor={cursorX},{cursorY}|area={area.DisplayId.Value}:{rect.Left},{rect.Top},{rect.Width},{rect.Height}|zone={zone}";
+            var now = DateTime.UtcNow;
+            if (string.Equals(signature, _lastResolveLogSignature, StringComparison.Ordinal) &&
+                (now - _lastResolveLogUtc).TotalMilliseconds < 1000)
+            {
+                return;
+            }
+
+            _lastResolveLogSignature = signature;
+            _lastResolveLogUtc = now;
+
+            AppLogger.LogInfo(
+                $"HotCornerResolve: source=DisplayArea, cursor=({cursorX},{cursorY}), zone={zone}, corner={corner}, displayId={area.DisplayId.Value}, bounds=({rect.Left},{rect.Top},{rect.Width},{rect.Height}) rb=({rect.Right},{rect.Bottom}), near=(left:{nearLeft},right:{nearRight},top:{nearTop},bottom:{nearBottom}).");
         }
 
         private bool IsMapped(HotCorner corner)

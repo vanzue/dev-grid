@@ -82,6 +82,11 @@ namespace TopToolbar.ViewModels
             {
                 if (_isGeneralSelected != value)
                 {
+                    if (!value && !_isHotCornersSelected && SelectedGroup == null && SelectedWorkspace == null)
+                    {
+                        return;
+                    }
+
                     _isGeneralSelected = value;
                     if (value)
                     {
@@ -115,6 +120,11 @@ namespace TopToolbar.ViewModels
             {
                 if (_isHotCornersSelected != value)
                 {
+                    if (!value && !_isGeneralSelected && SelectedGroup == null && SelectedWorkspace == null)
+                    {
+                        return;
+                    }
+
                     _isHotCornersSelected = value;
                     if (value)
                     {
@@ -195,7 +205,10 @@ namespace TopToolbar.ViewModels
                 }
             }
 
-            ScheduleSave();
+            if (!_suppressGeneralSave)
+            {
+                ScheduleSave();
+            }
         }
 
         private void HookGroup(ButtonGroup group)

@@ -65,12 +65,6 @@ namespace TopToolbar.ViewModels
 
                     EnsureDefaultActionsGroupEntry();
 
-                    if (SelectedGroup == null && Groups.Count > 0)
-                    {
-                        SelectedGroup = Groups[0];
-                        SelectedButton = SelectedGroup.Buttons.FirstOrDefault();
-                    }
-
                     _suppressWorkspaceSave = true;
                     try
                     {
@@ -79,6 +73,11 @@ namespace TopToolbar.ViewModels
                     finally
                     {
                         _suppressWorkspaceSave = false;
+                    }
+
+                    if (!IsGeneralSelected && !IsHotCornersSelected && SelectedGroup == null && SelectedWorkspace == null)
+                    {
+                        IsGeneralSelected = true;
                     }
                 }
                 finally
