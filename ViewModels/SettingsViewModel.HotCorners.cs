@@ -15,7 +15,7 @@ namespace TopToolbar.ViewModels
 
         private bool _hotCornersEnabled;
         private double _hotCornerDwellMilliseconds = 250;
-        private bool _hotCornerDisableOnFullScreen = true;
+        private bool _hotCornerDisableOnFullScreen;
         private bool _hotCornerShowHints = true;
         private int _hotCornerZonePx = 6;
         private int _topLeftActionIndex;

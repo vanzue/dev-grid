@@ -36,7 +36,7 @@ public class HotCornersConfig
 
     public bool ShowCornerHints { get; set; } = true;
 
-    public bool DisableOnFullScreen { get; set; } = true;
+    public bool DisableOnFullScreen { get; set; }
 
     public Dictionary<HotCorner, string> Actions { get; set; } = new();
 }
