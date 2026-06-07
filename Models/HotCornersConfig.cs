@@ -19,6 +19,11 @@ public static class HotCornerActions
 {
     public const string None = "none";
     public const string Snapshot = "workspace.snapshot";
+    public const string ShowDesktop = "system.showDesktop";
+    public const string TaskView = "system.taskView";
+    public const string LockScreen = "system.lockScreen";
+    public const string StartScreenSaver = "system.startScreenSaver";
+    public const string TurnOffDisplay = "system.turnOffDisplay";
 }
 
 public class HotCornersConfig

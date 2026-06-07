@@ -34,9 +34,11 @@ namespace TopToolbar.ViewModels
                     OnPropertyChanged(nameof(HasNoSelectedGroup));
                     if (value != null)
                     {
-                        // Deselect General when a group is selected
+                        // Deselect fixed sections when a group is selected
                         _isGeneralSelected = false;
+                        _isHotCornersSelected = false;
                         OnPropertyChanged(nameof(IsGeneralSelected));
+                        OnPropertyChanged(nameof(IsHotCornersSelected));
                         if (SelectedWorkspace != null)
                         {
                             SelectedWorkspace = null;
@@ -81,7 +83,13 @@ namespace TopToolbar.ViewModels
                 if (_isGeneralSelected != value)
                 {
                     _isGeneralSelected = value;
+                    if (value)
+                    {
+                        _isHotCornersSelected = false;
+                    }
+
                     OnPropertyChanged(nameof(IsGeneralSelected));
+                    OnPropertyChanged(nameof(IsHotCornersSelected));
                     OnPropertyChanged(nameof(IsGroupSelected));
                     OnPropertyChanged(nameof(IsWorkspaceSelected));
                     OnPropertyChanged(nameof(IsUserGroupSelected));
@@ -98,7 +106,39 @@ namespace TopToolbar.ViewModels
             }
         }
 
-        public bool IsGroupSelected => !IsGeneralSelected && SelectedGroup != null;
+        private bool _isHotCornersSelected;
+
+        public bool IsHotCornersSelected
+        {
+            get => _isHotCornersSelected;
+            set
+            {
+                if (_isHotCornersSelected != value)
+                {
+                    _isHotCornersSelected = value;
+                    if (value)
+                    {
+                        _isGeneralSelected = false;
+                    }
+
+                    OnPropertyChanged(nameof(IsHotCornersSelected));
+                    OnPropertyChanged(nameof(IsGeneralSelected));
+                    OnPropertyChanged(nameof(IsGroupSelected));
+                    OnPropertyChanged(nameof(IsWorkspaceSelected));
+                    OnPropertyChanged(nameof(IsUserGroupSelected));
+                    OnPropertyChanged(nameof(IsDefaultActionsGroupSelected));
+                    OnPropertyChanged(nameof(CanRemoveSelectedGroup));
+                    OnPropertyChanged(nameof(CanAddButtonToSelectedGroup));
+                    if (value)
+                    {
+                        SelectedGroup = null;
+                        SelectedWorkspace = null;
+                    }
+                }
+            }
+        }
+
+        public bool IsGroupSelected => !IsGeneralSelected && !IsHotCornersSelected && SelectedGroup != null;
 
         public bool IsUserGroupSelected => IsGroupSelected && !IsLockedDefaultGroup(SelectedGroup);
 

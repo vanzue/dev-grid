@@ -72,6 +72,14 @@ namespace TopToolbar
             WorkspacesList.SelectedItem = null;
         }
 
+        private void OnHotCornersItemTapped(object sender, TappedRoutedEventArgs e)
+        {
+            _vm.IsHotCornersSelected = true;
+            // Deselect any group/workspace list selection while showing fixed settings.
+            GroupsList.SelectedItem = null;
+            WorkspacesList.SelectedItem = null;
+        }
+
         // Rename handlers for groups list
         private async void OnStartRenameGroup(object sender, RoutedEventArgs e)
         {

@@ -46,6 +46,10 @@ namespace TopToolbar.ViewModels
                         {
                             IsGeneralSelected = false;
                         }
+                        if (IsHotCornersSelected)
+                        {
+                            IsHotCornersSelected = false;
+                        }
                         if (SelectedGroup != null)
                         {
                             SelectedGroup = null;
@@ -57,7 +61,7 @@ namespace TopToolbar.ViewModels
 
         public bool HasSelectedWorkspace => SelectedWorkspace != null;
 
-        public bool IsWorkspaceSelected => !IsGeneralSelected && SelectedWorkspace != null && SelectedGroup == null;
+        public bool IsWorkspaceSelected => !IsGeneralSelected && !IsHotCornersSelected && SelectedWorkspace != null && SelectedGroup == null;
 
         private void WorkspaceButtons_CollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
         {

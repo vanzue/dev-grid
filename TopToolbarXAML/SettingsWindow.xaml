@@ -342,6 +342,35 @@
                         </Grid>
                     </ListViewItem>
 
+                    <!-- Fixed Hot Corners item -->
+                    <ListViewItem Grid.Row="2"
+                                  x:Name="HotCornersItem"
+                                  IsSelected="{x:Bind ViewModel.IsHotCornersSelected, Mode=TwoWay}"
+                                  Tapped="OnHotCornersItemTapped"
+                                  Style="{StaticResource ToolbarListItemStyle}"
+                                  Padding="4,6">
+                        <Grid ColumnSpacing="10" Padding="6,2,4,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Width="28"
+                                    Height="28"
+                                    CornerRadius="8"
+                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                                <FontIcon FontFamily="Segoe MDL2 Assets"
+                                          Glyph="&#xE7C4;"
+                                          FontSize="14"
+                                          VerticalAlignment="Center"
+                                          HorizontalAlignment="Center"/>
+                            </Border>
+                            <TextBlock Grid.Column="1"
+                                       Text="Hot Corners"
+                                       FontWeight="Normal"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListViewItem>
+
                     <!-- Groups header with add/remove -->
                     <Grid Grid.Row="3"
                           Margin="0,8,0,2"
@@ -604,7 +633,18 @@
                                                                     ContentAlignment="Right">
                                                 <tkcontrols:SettingsCard.Header>
                                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE7F4;" FontSize="14"/>
+                                                        <Grid Width="18" Height="16" VerticalAlignment="Center">
+                                                            <Border BorderBrush="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="1"
+                                                                    Opacity="0.84"
+                                                                    Margin="1,2,1,1"/>
+                                                            <Border Height="3"
+                                                                    Background="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                    CornerRadius="1,1,0,0"
+                                                                    Margin="1,2,1,0"
+                                                                    VerticalAlignment="Top"/>
+                                                        </Grid>
                                                         <TextBlock Text="Top bar"/>
                                                     </StackPanel>
                                                 </tkcontrols:SettingsCard.Header>
@@ -618,7 +658,23 @@
                                                                     ContentAlignment="Right">
                                                 <tkcontrols:SettingsCard.Header>
                                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE786;" FontSize="14"/>
+                                                        <Grid Width="18" Height="18" VerticalAlignment="Center">
+                                                            <Ellipse Stroke="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                     StrokeThickness="1.5"
+                                                                     Opacity="0.84"
+                                                                     Margin="2"/>
+                                                            <Ellipse Width="4"
+                                                                     Height="4"
+                                                                     Fill="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                     HorizontalAlignment="Center"
+                                                                     VerticalAlignment="Center"/>
+                                                            <Ellipse Width="3"
+                                                                     Height="3"
+                                                                     Fill="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                     HorizontalAlignment="Center"
+                                                                     VerticalAlignment="Top"
+                                                                     Margin="0,0,0,0"/>
+                                                        </Grid>
                                                         <TextBlock Text="Ring"/>
                                                     </StackPanel>
                                                 </tkcontrols:SettingsCard.Header>
@@ -632,7 +688,19 @@
                                                                     ContentAlignment="Right">
                                                 <tkcontrols:SettingsCard.Header>
                                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE765;" FontSize="14"/>
+                                                        <Border Width="24"
+                                                                Height="16"
+                                                                BorderBrush="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                BorderThickness="1"
+                                                                CornerRadius="2"
+                                                                VerticalAlignment="Center"
+                                                                Opacity="0.84">
+                                                            <TextBlock Text="Ctrl"
+                                                                       FontSize="7"
+                                                                       FontWeight="SemiBold"
+                                                                       HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center"/>
+                                                        </Border>
                                                         <TextBlock Text="Require Ctrl"/>
                                                     </StackPanel>
                                                 </tkcontrols:SettingsCard.Header>
@@ -668,6 +736,38 @@
                                     <ComboBoxItem Content="Cloud Monochrome"/>
                                 </ComboBox>
                             </tkcontrols:SettingsCard>
+
+                        </StackPanel>
+
+                        <!-- Hot Corners settings (only when Hot Corners is selected) -->
+                        <StackPanel Spacing="18" Visibility="{x:Bind ViewModel.IsHotCornersSelected, Mode=OneWay}">
+                            <Grid ColumnSpacing="16"
+                                  Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Width="48"
+                                        Height="48"
+                                        CornerRadius="14"
+                                        Background="{StaticResource SettingsAccentGradientBrush}"
+                                        VerticalAlignment="Top">
+                                    <FontIcon FontFamily="Segoe MDL2 Assets"
+                                              Glyph="&#xE7C4;"
+                                              Foreground="White"
+                                              FontSize="21"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel Grid.Column="1"
+                                            Spacing="5"
+                                            VerticalAlignment="Center">
+                                    <TextBlock Text="Hot Corners"
+                                               Style="{StaticResource SettingsPageTitleStyle}"/>
+                                    <TextBlock Text="Trigger system or workspace actions by parking the cursor in a screen corner."
+                                               Style="{StaticResource SettingsPageSubtitleStyle}"/>
+                                </StackPanel>
+                            </Grid>
 
                             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
@@ -717,7 +817,16 @@
                                             <tkcontrols:SettingsCard Description="Action when the cursor reaches the top-left corner.">
                                                 <tkcontrols:SettingsCard.Header>
                                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE744;" FontSize="14"/>
+                                                        <Grid Width="16" Height="16" VerticalAlignment="Center">
+                                                            <Border BorderBrush="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                    BorderThickness="1"
+                                                                    Opacity="0.84"/>
+                                                            <Border Width="6"
+                                                                    Height="6"
+                                                                    Background="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                    HorizontalAlignment="Left"
+                                                                    VerticalAlignment="Top"/>
+                                                        </Grid>
                                                         <TextBlock Text="Top-left"/>
                                                     </StackPanel>
                                                 </tkcontrols:SettingsCard.Header>
@@ -725,13 +834,27 @@
                                                           SelectedIndex="{x:Bind ViewModel.TopLeftActionIndex, Mode=TwoWay}">
                                                     <ComboBoxItem Content="None"/>
                                                     <ComboBoxItem Content="Snap workspace"/>
+                                                    <ComboBoxItem Content="Show desktop"/>
+                                                    <ComboBoxItem Content="Task view"/>
+                                                    <ComboBoxItem Content="Lock screen"/>
+                                                    <ComboBoxItem Content="Start screen saver"/>
+                                                    <ComboBoxItem Content="Turn off display"/>
                                                 </ComboBox>
                                             </tkcontrols:SettingsCard>
 
                                             <tkcontrols:SettingsCard Description="Action when the cursor reaches the top-right corner.">
                                                 <tkcontrols:SettingsCard.Header>
                                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE745;" FontSize="14"/>
+                                                        <Grid Width="16" Height="16" VerticalAlignment="Center">
+                                                            <Border BorderBrush="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                    BorderThickness="1"
+                                                                    Opacity="0.84"/>
+                                                            <Border Width="6"
+                                                                    Height="6"
+                                                                    Background="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                    HorizontalAlignment="Right"
+                                                                    VerticalAlignment="Top"/>
+                                                        </Grid>
                                                         <TextBlock Text="Top-right"/>
                                                     </StackPanel>
                                                 </tkcontrols:SettingsCard.Header>
@@ -739,13 +862,27 @@
                                                           SelectedIndex="{x:Bind ViewModel.TopRightActionIndex, Mode=TwoWay}">
                                                     <ComboBoxItem Content="None"/>
                                                     <ComboBoxItem Content="Snap workspace"/>
+                                                    <ComboBoxItem Content="Show desktop"/>
+                                                    <ComboBoxItem Content="Task view"/>
+                                                    <ComboBoxItem Content="Lock screen"/>
+                                                    <ComboBoxItem Content="Start screen saver"/>
+                                                    <ComboBoxItem Content="Turn off display"/>
                                                 </ComboBox>
                                             </tkcontrols:SettingsCard>
 
                                             <tkcontrols:SettingsCard Description="Action when the cursor reaches the bottom-left corner.">
                                                 <tkcontrols:SettingsCard.Header>
                                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE742;" FontSize="14"/>
+                                                        <Grid Width="16" Height="16" VerticalAlignment="Center">
+                                                            <Border BorderBrush="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                    BorderThickness="1"
+                                                                    Opacity="0.84"/>
+                                                            <Border Width="6"
+                                                                    Height="6"
+                                                                    Background="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                    HorizontalAlignment="Left"
+                                                                    VerticalAlignment="Bottom"/>
+                                                        </Grid>
                                                         <TextBlock Text="Bottom-left"/>
                                                     </StackPanel>
                                                 </tkcontrols:SettingsCard.Header>
@@ -753,13 +890,27 @@
                                                           SelectedIndex="{x:Bind ViewModel.BottomLeftActionIndex, Mode=TwoWay}">
                                                     <ComboBoxItem Content="None"/>
                                                     <ComboBoxItem Content="Snap workspace"/>
+                                                    <ComboBoxItem Content="Show desktop"/>
+                                                    <ComboBoxItem Content="Task view"/>
+                                                    <ComboBoxItem Content="Lock screen"/>
+                                                    <ComboBoxItem Content="Start screen saver"/>
+                                                    <ComboBoxItem Content="Turn off display"/>
                                                 </ComboBox>
                                             </tkcontrols:SettingsCard>
 
                                             <tkcontrols:SettingsCard Description="Action when the cursor reaches the bottom-right corner.">
                                                 <tkcontrols:SettingsCard.Header>
                                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE743;" FontSize="14"/>
+                                                        <Grid Width="16" Height="16" VerticalAlignment="Center">
+                                                            <Border BorderBrush="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                    BorderThickness="1"
+                                                                    Opacity="0.84"/>
+                                                            <Border Width="6"
+                                                                    Height="6"
+                                                                    Background="{ThemeResource TextFillColorPrimaryBrush}"
+                                                                    HorizontalAlignment="Right"
+                                                                    VerticalAlignment="Bottom"/>
+                                                        </Grid>
                                                         <TextBlock Text="Bottom-right"/>
                                                     </StackPanel>
                                                 </tkcontrols:SettingsCard.Header>
@@ -767,6 +918,11 @@
                                                           SelectedIndex="{x:Bind ViewModel.BottomRightActionIndex, Mode=TwoWay}">
                                                     <ComboBoxItem Content="None"/>
                                                     <ComboBoxItem Content="Snap workspace"/>
+                                                    <ComboBoxItem Content="Show desktop"/>
+                                                    <ComboBoxItem Content="Task view"/>
+                                                    <ComboBoxItem Content="Lock screen"/>
+                                                    <ComboBoxItem Content="Start screen saver"/>
+                                                    <ComboBoxItem Content="Turn off display"/>
                                                 </ComboBox>
                                             </tkcontrols:SettingsCard>
 

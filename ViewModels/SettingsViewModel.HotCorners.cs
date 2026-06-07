@@ -22,6 +22,17 @@ namespace TopToolbar.ViewModels
         private int _bottomLeftActionIndex;
         private int _bottomRightActionIndex = 1;
 
+        private static readonly string[] HotCornerActionIds =
+        {
+            HotCornerActions.None,
+            HotCornerActions.Snapshot,
+            HotCornerActions.ShowDesktop,
+            HotCornerActions.TaskView,
+            HotCornerActions.LockScreen,
+            HotCornerActions.StartScreenSaver,
+            HotCornerActions.TurnOffDisplay,
+        };
+
         public bool HotCornersEnabled
         {
             get => _hotCornersEnabled;
@@ -121,15 +132,24 @@ namespace TopToolbar.ViewModels
             return config.Actions.TryGetValue(corner, out var value) ? value : HotCornerActions.None;
         }
 
-        // Index mapping: 0 = None, 1 = Snap workspace.
         private static int ActionIdToIndex(string actionId)
         {
-            return string.Equals(actionId, HotCornerActions.Snapshot, StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            for (var i = 0; i < HotCornerActionIds.Length; i++)
+            {
+                if (string.Equals(actionId, HotCornerActionIds[i], StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return 0;
         }
 
         private static string IndexToActionId(int index)
         {
-            return index == 1 ? HotCornerActions.Snapshot : HotCornerActions.None;
+            return index >= 0 && index < HotCornerActionIds.Length
+                ? HotCornerActionIds[index]
+                : HotCornerActions.None;
         }
     }
 }
