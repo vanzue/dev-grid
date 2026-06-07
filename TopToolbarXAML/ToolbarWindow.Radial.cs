@@ -1198,6 +1198,15 @@ namespace TopToolbar
                 {
                     e.Handled = true;
                     var menu = new MenuFlyout();
+                    var renameItem = new MenuFlyoutItem
+                    {
+                        Text = "Rename workspace",
+                    };
+                    renameItem.Click += async (_, __) =>
+                    {
+                        HideRadialMenu();
+                        await RenameRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
+                    };
                     var removeItem = new MenuFlyoutItem
                     {
                         Text = "Remove workspace",
@@ -1207,6 +1216,7 @@ namespace TopToolbar
                         HideRadialMenu();
                         await RemoveRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
                     };
+                    menu.Items.Add(renameItem);
                     menu.Items.Add(removeItem);
                     menu.ShowAt(button, e.GetPosition(button));
                 };

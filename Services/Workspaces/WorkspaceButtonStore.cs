@@ -105,6 +105,53 @@ namespace TopToolbar.Services.Workspaces
             return previousPath;
         }
 
+        public async Task RenameWorkspaceButtonAsync(
+            string workspaceId,
+            string name,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(workspaceId))
+            {
+                return;
+            }
+
+            var normalizedWorkspaceId = workspaceId.Trim();
+            var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+            config.Buttons ??= new List<WorkspaceButtonConfig>();
+
+            var buttonId = BuildButtonId(normalizedWorkspaceId);
+            var button = config.Buttons.FirstOrDefault(b =>
+                string.Equals(b.WorkspaceId, normalizedWorkspaceId, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(b.Id, buttonId, StringComparison.OrdinalIgnoreCase));
+
+            if (button == null)
+            {
+                button = new WorkspaceButtonConfig
+                {
+                    Id = buttonId,
+                    WorkspaceId = normalizedWorkspaceId,
+                    Description = normalizedWorkspaceId,
+                    Enabled = true,
+                    Icon = new ProviderIcon { Type = ProviderIconType.Glyph, Glyph = "\uE7F4" },
+                };
+                config.Buttons.Add(button);
+            }
+
+            button.WorkspaceId = normalizedWorkspaceId;
+            button.Name = string.IsNullOrWhiteSpace(name) ? normalizedWorkspaceId : name.Trim();
+            if (string.IsNullOrWhiteSpace(button.Description))
+            {
+                button.Description = normalizedWorkspaceId;
+            }
+
+            if (await ShouldClearLegacyDataAsync(config, cancellationToken).ConfigureAwait(false))
+            {
+                config.Data = null;
+            }
+
+            await _configStore.SaveAsync(config, cancellationToken).ConfigureAwait(false);
+        }
+
         public async Task<bool> RemoveWorkspaceButtonAsync(
             string workspaceId,
             CancellationToken cancellationToken = default)

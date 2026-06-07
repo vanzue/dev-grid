@@ -255,6 +255,72 @@ namespace TopToolbar.Services.Workspaces
 
             throw new IOException("Failed to update workspace launch time after multiple retries.");
         }
+
+        public async Task<bool> UpdateWorkspaceNameAsync(
+            string workspaceId,
+            string name,
+            CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(workspaceId))
+            {
+                return false;
+            }
+
+            for (var attempt = 0; attempt < SaveRetryCount; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var snapshot = await LoadDocumentSnapshotAsync(cancellationToken).ConfigureAwait(false);
+                var document = snapshot.Document;
+                if (document.Workspaces == null || document.Workspaces.Count == 0)
+                {
+                    return false;
+                }
+
+                var updated = false;
+                foreach (var workspace in document.Workspaces)
+                {
+                    if (workspace == null)
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(workspace.Id, workspaceId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        workspace.Name = name?.Trim() ?? string.Empty;
+                        updated = true;
+                        break;
+                    }
+                }
+
+                if (!updated)
+                {
+                    return false;
+                }
+
+                try
+                {
+                    if (await TrySaveDocumentAsync(document, snapshot.VersionTicks, cancellationToken)
+                        .ConfigureAwait(false))
+                    {
+                        return true;
+                    }
+                }
+                catch (IOException) when (attempt + 1 < SaveRetryCount)
+                {
+                }
+                catch (UnauthorizedAccessException) when (attempt + 1 < SaveRetryCount)
+                {
+                }
+
+                if (attempt + 1 < SaveRetryCount)
+                {
+                    await Task.Delay(SaveRetryDelayMilliseconds, cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            throw new IOException("Failed to update workspace name after multiple retries.");
+        }
         
         private async Task<WorkspaceDocument> LoadDocumentAsync(CancellationToken cancellationToken)
         {

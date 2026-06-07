@@ -400,6 +400,57 @@ namespace TopToolbar.Providers
             return true;
         }
 
+        internal async Task<WorkspaceDefinition> RenameWorkspaceAsync(
+            string workspaceId,
+            string name,
+            CancellationToken cancellationToken)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, nameof(WorkspaceProvider));
+
+            var normalizedWorkspaceId = workspaceId?.Trim();
+            var normalizedName = name?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedWorkspaceId) ||
+                string.IsNullOrWhiteSpace(normalizedName))
+            {
+                return null;
+            }
+
+            var existing = await _definitionStore.LoadByIdAsync(normalizedWorkspaceId, cancellationToken)
+                .ConfigureAwait(false);
+            if (existing == null)
+            {
+                return null;
+            }
+
+            var renamed = await _definitionStore.UpdateWorkspaceNameAsync(
+                    normalizedWorkspaceId,
+                    normalizedName,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!renamed)
+            {
+                return null;
+            }
+
+            await _buttonStore.RenameWorkspaceButtonAsync(
+                    normalizedWorkspaceId,
+                    normalizedName,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            try
+            {
+                await ReloadIfChangedAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"WorkspaceProvider: failed to refresh workspace cache after rename '{normalizedWorkspaceId}' - {ex.Message}");
+            }
+
+            existing.Name = normalizedName;
+            return existing;
+        }
+
         private static void DeletePreviousWorkspaceIcon(string workspaceId, string previousPath, string currentPath)
         {
             try

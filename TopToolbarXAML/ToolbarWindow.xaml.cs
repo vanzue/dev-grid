@@ -296,6 +296,14 @@ namespace TopToolbar
 
             var workspaceName = item.Button.DisplayName;
             var menu = new MenuFlyout();
+            var renameItem = new MenuFlyoutItem
+            {
+                Text = "Rename workspace",
+            };
+            renameItem.Click += async (_, _) =>
+            {
+                await RenameRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
+            };
             var removeItem = new MenuFlyoutItem
             {
                 Text = "Remove workspace",
@@ -304,6 +312,7 @@ namespace TopToolbar
             {
                 await RemoveRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
             };
+            menu.Items.Add(renameItem);
             menu.Items.Add(removeItem);
             menu.ShowAt(fe, e.GetPosition(fe));
         }
@@ -438,6 +447,71 @@ namespace TopToolbar
             catch (Exception ex)
             {
                 _notificationService.ShowError("Failed to remove workspace: " + ex.Message);
+            }
+        }
+
+        private async System.Threading.Tasks.Task RenameRuntimeWorkspaceAsync(
+            string workspaceId,
+            string currentWorkspaceName)
+        {
+            var normalizedWorkspaceId = workspaceId?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedWorkspaceId))
+            {
+                return;
+            }
+
+            var currentName = string.IsNullOrWhiteSpace(currentWorkspaceName)
+                ? normalizedWorkspaceId
+                : currentWorkspaceName.Trim();
+
+            try
+            {
+                if (!_providerRuntime.TryGetProvider(WorkspaceProviderId, out var provider) ||
+                    provider is not WorkspaceProvider workspaceProvider)
+                {
+                    _notificationService.ShowError("Workspace provider is unavailable.");
+                    return;
+                }
+
+                var newName = await _toastWindow
+                    .ShowInputPromptAsync(
+                        "Rename workspace",
+                        "Enter a new name for this workspace.",
+                        "Workspace name",
+                        currentName,
+                        fieldLabel: "Workspace name",
+                        confirmButtonText: "Rename",
+                        subtitle: currentName)
+                    .ConfigureAwait(true);
+
+                if (string.IsNullOrWhiteSpace(newName))
+                {
+                    return;
+                }
+
+                var normalizedName = newName.Trim();
+                if (string.Equals(normalizedName, currentName, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                var renamed = await workspaceProvider.RenameWorkspaceAsync(
+                        normalizedWorkspaceId,
+                        normalizedName,
+                        CancellationToken.None)
+                    .ConfigureAwait(true);
+                if (renamed == null)
+                {
+                    _notificationService.ShowError("Workspace was not found.");
+                    return;
+                }
+
+                await RefreshDynamicProviderGroupsAsync(CancellationToken.None).ConfigureAwait(true);
+                _notificationService.ShowSuccess($"Renamed workspace to '{renamed.Name}'.");
+            }
+            catch (Exception ex)
+            {
+                _notificationService.ShowError("Failed to rename workspace: " + ex.Message);
             }
         }
 
