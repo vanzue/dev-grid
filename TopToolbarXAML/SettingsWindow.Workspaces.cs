@@ -135,7 +135,14 @@ namespace TopToolbar
             }
 
             var xamlRoot = root.XamlRoot;
-            var nameBox = new TextBox { PlaceholderText = "Workspace name" };
+            var defaultWorkspaceName = await WorkspaceNameSuggester
+                .GetNextWorkspaceNameAsync(CancellationToken.None)
+                .ConfigureAwait(true);
+            var nameBox = new TextBox
+            {
+                PlaceholderText = "Workspace name",
+                Text = defaultWorkspaceName,
+            };
 
             if (
                 root.Resources != null
@@ -164,7 +171,7 @@ namespace TopToolbar
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary,
                 Content = dialogContent,
-                IsPrimaryButtonEnabled = false,
+                IsPrimaryButtonEnabled = !string.IsNullOrWhiteSpace(defaultWorkspaceName),
             };
 
             nameBox.TextChanged += (_, __) =>

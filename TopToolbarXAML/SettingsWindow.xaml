@@ -669,6 +669,146 @@
                                 </ComboBox>
                             </tkcontrols:SettingsCard>
 
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    Padding="16,12">
+                                <StackPanel Spacing="10" HorizontalAlignment="Stretch">
+                                    <StackPanel Spacing="2">
+                                        <StackPanel Orientation="Horizontal" Spacing="10">
+                                            <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE7C4;" FontSize="15"/>
+                                            <TextBlock Text="Hot corners"
+                                                       FontSize="13"
+                                                       FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                        <TextBlock Text="Trigger an action by parking the cursor in a screen corner."
+                                                   Opacity="0.72"/>
+                                    </StackPanel>
+
+                                    <Border Height="1"
+                                            Background="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            Opacity="0.35"
+                                            Margin="0,2,0,2"/>
+
+                                    <tkcontrols:SettingsCard Description="Enable cursor hot corners."
+                                                            ContentAlignment="Right">
+                                        <tkcontrols:SettingsCard.Header>
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE7C4;" FontSize="14"/>
+                                                <TextBlock Text="Enabled"/>
+                                            </StackPanel>
+                                        </tkcontrols:SettingsCard.Header>
+                                        <ToggleSwitch HorizontalAlignment="Right"
+                                                      IsOn="{x:Bind ViewModel.HotCornersEnabled, Mode=TwoWay}"
+                                                      OnContent=""
+                                                      OffContent=""/>
+                                    </tkcontrols:SettingsCard>
+
+                                    <ContentControl IsEnabled="{x:Bind ViewModel.HotCornersEnabled, Mode=OneWay}"
+                                                    HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Stretch">
+                                    <Border Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="12"
+                                            Padding="2">
+                                        <StackPanel Spacing="0">
+                                            <tkcontrols:SettingsCard Description="Action when the cursor reaches the top-left corner.">
+                                                <tkcontrols:SettingsCard.Header>
+                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE744;" FontSize="14"/>
+                                                        <TextBlock Text="Top-left"/>
+                                                    </StackPanel>
+                                                </tkcontrols:SettingsCard.Header>
+                                                <ComboBox MinWidth="180"
+                                                          SelectedIndex="{x:Bind ViewModel.TopLeftActionIndex, Mode=TwoWay}">
+                                                    <ComboBoxItem Content="None"/>
+                                                    <ComboBoxItem Content="Snap workspace"/>
+                                                </ComboBox>
+                                            </tkcontrols:SettingsCard>
+
+                                            <tkcontrols:SettingsCard Description="Action when the cursor reaches the top-right corner.">
+                                                <tkcontrols:SettingsCard.Header>
+                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE745;" FontSize="14"/>
+                                                        <TextBlock Text="Top-right"/>
+                                                    </StackPanel>
+                                                </tkcontrols:SettingsCard.Header>
+                                                <ComboBox MinWidth="180"
+                                                          SelectedIndex="{x:Bind ViewModel.TopRightActionIndex, Mode=TwoWay}">
+                                                    <ComboBoxItem Content="None"/>
+                                                    <ComboBoxItem Content="Snap workspace"/>
+                                                </ComboBox>
+                                            </tkcontrols:SettingsCard>
+
+                                            <tkcontrols:SettingsCard Description="Action when the cursor reaches the bottom-left corner.">
+                                                <tkcontrols:SettingsCard.Header>
+                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE742;" FontSize="14"/>
+                                                        <TextBlock Text="Bottom-left"/>
+                                                    </StackPanel>
+                                                </tkcontrols:SettingsCard.Header>
+                                                <ComboBox MinWidth="180"
+                                                          SelectedIndex="{x:Bind ViewModel.BottomLeftActionIndex, Mode=TwoWay}">
+                                                    <ComboBoxItem Content="None"/>
+                                                    <ComboBoxItem Content="Snap workspace"/>
+                                                </ComboBox>
+                                            </tkcontrols:SettingsCard>
+
+                                            <tkcontrols:SettingsCard Description="Action when the cursor reaches the bottom-right corner.">
+                                                <tkcontrols:SettingsCard.Header>
+                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE743;" FontSize="14"/>
+                                                        <TextBlock Text="Bottom-right"/>
+                                                    </StackPanel>
+                                                </tkcontrols:SettingsCard.Header>
+                                                <ComboBox MinWidth="180"
+                                                          SelectedIndex="{x:Bind ViewModel.BottomRightActionIndex, Mode=TwoWay}">
+                                                    <ComboBoxItem Content="None"/>
+                                                    <ComboBoxItem Content="Snap workspace"/>
+                                                </ComboBox>
+                                            </tkcontrols:SettingsCard>
+
+                                            <tkcontrols:SettingsCard Description="How long the cursor must rest in the corner before triggering.">
+                                                <tkcontrols:SettingsCard.Header>
+                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE823;" FontSize="14"/>
+                                                        <TextBlock Text="Dwell time"/>
+                                                    </StackPanel>
+                                                </tkcontrols:SettingsCard.Header>
+                                                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                                    <Slider Width="200"
+                                                            Minimum="100"
+                                                            Maximum="1500"
+                                                            StepFrequency="50"
+                                                            Value="{x:Bind ViewModel.HotCornerDwellMilliseconds, Mode=TwoWay}"/>
+                                                    <TextBlock Text="{x:Bind ViewModel.HotCornerDwellMilliseconds, Mode=OneWay}"
+                                                               VerticalAlignment="Center"
+                                                               MinWidth="36"/>
+                                                    <TextBlock Text="ms" VerticalAlignment="Center" Opacity="0.7"/>
+                                                </StackPanel>
+                                            </tkcontrols:SettingsCard>
+
+                                            <tkcontrols:SettingsCard Description="Suppress hot corners while a full-screen app or game is focused."
+                                                                    ContentAlignment="Right">
+                                                <tkcontrols:SettingsCard.Header>
+                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE740;" FontSize="14"/>
+                                                        <TextBlock Text="Disable in full screen"/>
+                                                    </StackPanel>
+                                                </tkcontrols:SettingsCard.Header>
+                                                <ToggleSwitch HorizontalAlignment="Right"
+                                                              IsOn="{x:Bind ViewModel.HotCornerDisableOnFullScreen, Mode=TwoWay}"
+                                                              OnContent=""
+                                                              OffContent=""/>
+                                            </tkcontrols:SettingsCard>
+                                        </StackPanel>
+                                    </Border>
+                                    </ContentControl>
+                                </StackPanel>
+                            </Border>
+
                         </StackPanel>
 
                         <!-- Editable group settings (user-created groups only) -->

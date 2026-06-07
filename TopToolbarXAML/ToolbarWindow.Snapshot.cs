@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml.Controls;
 using TopToolbar.Logging;
 using TopToolbar.Providers;
+using TopToolbar.Services.Workspaces;
 
 namespace TopToolbar
 {
@@ -26,7 +27,9 @@ namespace TopToolbar
 
             try
             {
-                var defaultSnapshotName = $"Snapshot {DateTime.Now:yyyy-MM-dd HH-mm-ss}";
+                var defaultSnapshotName = await WorkspaceNameSuggester
+                    .GetNextWorkspaceNameAsync(CancellationToken.None)
+                    .ConfigureAwait(true);
                 AppLogger.LogInfo($"QuickSnapshot: prompt open, defaultName='{defaultSnapshotName}'.");
                 var snapshotName = await _toastWindow
                     .ShowInputPromptAsync(

@@ -82,6 +82,8 @@ namespace TopToolbar
                         // Keep the leftmost groups visible after config/theme refreshes.
                         ToolbarScrollViewer?.ChangeView(0, null, null, disableAnimation: true);
                     });
+
+                    await ApplyHotCornersConfigAsync();
                 };
 
                 _configWatcher = new FileSystemWatcher(dir, file)

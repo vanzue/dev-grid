@@ -65,6 +65,7 @@ namespace TopToolbar
             _providerService = new ActionProviderService(_providerRuntime);
             _notificationService = new NotificationService(DispatcherQueue);
             _toastWindow = new ToastWindow(_notificationService);
+            InitializeHotCorners();
             _actionExecutor = new ToolbarActionExecutor(
                 _providerService,
                 _contextFactory,
@@ -180,6 +181,8 @@ namespace TopToolbar
                     ToolbarScrollViewer?.ChangeView(0, null, null, disableAnimation: true);
                     _builtConfigOnce = true;
                 });
+
+                await ApplyHotCornersConfigAsync();
             };
         }
 
@@ -223,6 +226,8 @@ namespace TopToolbar
             {
             }
 
+            DisposeHotCorners();
+
             GC.SuppressFinalize(this);
         }
 
@@ -250,6 +255,7 @@ namespace TopToolbar
         private void SyncToastWindowTheme()
         {
             _toastWindow?.ApplyToolbarThemeResources(RootGrid?.Resources);
+            SyncCornerOverlayTheme();
         }
 
         private void UpdateToastWindowAnchor()

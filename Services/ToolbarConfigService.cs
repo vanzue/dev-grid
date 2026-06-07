@@ -59,6 +59,22 @@ namespace TopToolbar.Services
             config.Bindings ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             config.DefaultActions ??= new DefaultActionsConfig();
             config.DefaultActions.MediaPlayPause ??= new DefaultActionItemConfig();
+            config.HotCorners ??= new HotCornersConfig();
+            config.HotCorners.Actions ??= new Dictionary<HotCorner, string>();
+            if (config.HotCorners.DwellMilliseconds <= 0)
+            {
+                config.HotCorners.DwellMilliseconds = 250;
+            }
+
+            if (config.HotCorners.HotZonePx <= 0)
+            {
+                config.HotCorners.HotZonePx = 6;
+            }
+
+            if (!config.HotCorners.Actions.ContainsKey(HotCorner.BottomRight))
+            {
+                config.HotCorners.Actions[HotCorner.BottomRight] = HotCornerActions.Snapshot;
+            }
             if (!Enum.IsDefined(typeof(ToolbarDisplayMode), config.DisplayMode))
             {
                 config.DisplayMode = ToolbarDisplayMode.TopBar;

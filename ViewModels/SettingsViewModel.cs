@@ -55,6 +55,7 @@ namespace TopToolbar.ViewModels
                     Theme = toolbarConfig.Theme;
                     SystemControlsEnabled = toolbarConfig.DefaultActions.SystemControlsEnabled;
                     MediaPlayPauseEnabled = toolbarConfig.DefaultActions.MediaPlayPause.Enabled;
+                    LoadHotCorners(toolbarConfig.HotCorners);
 
                     Groups.Clear();
                     foreach (var g in toolbarConfig.Groups)
@@ -185,6 +186,7 @@ namespace TopToolbar.ViewModels
                         Enabled = MediaPlayPauseEnabled,
                     },
                 },
+                HotCorners = BuildHotCornersConfig(),
                 Groups = Groups.Select(g => new ButtonGroup
                 {
                     Id = g.Id,

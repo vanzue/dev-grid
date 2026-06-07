@@ -19,6 +19,14 @@ internal sealed class ExternalProviderTypeConverter : JsonStringEnumConverter<To
     }
 }
 
+internal sealed class HotCornerConverter : JsonStringEnumConverter<TopToolbar.Models.HotCorner>
+{
+    public HotCornerConverter()
+        : base(JsonNamingPolicy.CamelCase, allowIntegerValues: true)
+    {
+    }
+}
+
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     AllowTrailingCommas = true,
@@ -60,6 +68,7 @@ internal partial class ProviderConfigJsonContext : JsonSerializerContext
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     AllowTrailingCommas = true,
     WriteIndented = true,
+    Converters = new[] { typeof(HotCornerConverter) },
     GenerationMode = JsonSourceGenerationMode.Metadata)]
 [JsonSerializable(typeof(TopToolbar.Models.ToolbarConfig))]
 internal partial class ToolbarConfigJsonContext : JsonSerializerContext

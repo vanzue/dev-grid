@@ -24,4 +24,6 @@ public class ToolbarConfig
     public ToolbarTheme Theme { get; set; } = ToolbarTheme.WarmFrosted;
 
     public DefaultActionsConfig DefaultActions { get; set; } = new();
+
+    public HotCornersConfig HotCorners { get; set; } = new();
 }

@@ -316,7 +316,7 @@ namespace TopToolbar.Services.Windowing
 
             try
             {
-                _ = ShowWindow(hwnd, SwShowNormal);
+                ShowWindowForActivation(hwnd);
                 _ = BringWindowToTop(hwnd);
                 _ = SetForegroundWindow(hwnd);
 
@@ -352,7 +352,7 @@ namespace TopToolbar.Services.Windowing
                         attachedToTarget = AttachThreadInput(currentThread, targetThread, true);
                     }
 
-                    _ = ShowWindow(hwnd, SwShowNormal);
+                    ShowWindowForActivation(hwnd);
                     _ = BringWindowToTop(hwnd);
                     _ = SetForegroundWindow(hwnd);
 
@@ -379,6 +379,25 @@ namespace TopToolbar.Services.Windowing
             catch
             {
                 return false;
+            }
+        }
+
+        private static void ShowWindowForActivation(IntPtr hwnd)
+        {
+            if (TryGetWindowPlacement(
+                    hwnd,
+                    out _,
+                    out var isMinimized,
+                    out var isMaximized)
+                && isMaximized)
+            {
+                _ = ShowWindow(hwnd, SwShowMaximized);
+                return;
+            }
+
+            if (isMinimized)
+            {
+                _ = ShowWindow(hwnd, SwShowNormal);
             }
         }
 
