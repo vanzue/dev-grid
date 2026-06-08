@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Windowing;
@@ -531,49 +532,10 @@ namespace TopToolbar
                     continue;
                 }
 
-                AppendGroupButtons(entries, seen, group, "Workspace");
+                AppendGroupButtons(entries, seen, group, "Workspace", workspaceOnly: true, hotOnly: true);
             }
 
-            foreach (var group in ItemsViewModel.VisibleGroups)
-            {
-                if (IsWorkspaceGroup(group))
-                {
-                    continue;
-                }
-
-                var labelPrefix = string.IsNullOrWhiteSpace(group?.Group?.Name) ? "App" : group.Group.Name;
-                AppendGroupButtons(entries, seen, group, labelPrefix);
-            }
-
-            entries.Add(new RadialEntry
-            {
-                Kind = RadialEntryKind.Snapshot,
-                Label = "Snapshot",
-                Title = "Snapshot",
-                Category = "Workspace",
-                IconButton = new ToolbarButton
-                {
-                    Name = "Snapshot",
-                    IconType = ToolbarIconType.Catalog,
-                    IconGlyph = "\uE722",
-                },
-            });
-
-            entries.Add(new RadialEntry
-            {
-                Kind = RadialEntryKind.Settings,
-                Label = "Settings",
-                Title = "Settings",
-                Category = "System",
-                IconButton = new ToolbarButton
-                {
-                    Name = "Settings",
-                    IconType = ToolbarIconType.Catalog,
-                    IconGlyph = "\uE713",
-                },
-            });
-
-            return entries;
+            return entries.Take(8).ToList();
         }
 
         private static bool IsWorkspaceGroup(ToolbarGroupViewModel group)
@@ -610,7 +572,9 @@ namespace TopToolbar
             List<RadialEntry> entries,
             HashSet<string> seen,
             ToolbarGroupViewModel group,
-            string labelPrefix)
+            string labelPrefix,
+            bool workspaceOnly = false,
+            bool hotOnly = false)
         {
             if (entries == null || seen == null || group == null)
             {
@@ -620,6 +584,16 @@ namespace TopToolbar
             foreach (var button in group.Buttons)
             {
                 if (button?.Button == null || !button.IsEnabled)
+                {
+                    continue;
+                }
+
+                if (workspaceOnly && !IsWorkspaceGroup(group))
+                {
+                    continue;
+                }
+
+                if (hotOnly && button.Button.IsDimmed)
                 {
                     continue;
                 }
@@ -1189,39 +1163,6 @@ namespace TopToolbar
 
             button.Content = root;
             button.Click += OnRadialButtonClick;
-            if (entry.Kind == RadialEntryKind.ToolbarButton &&
-                entry.Item?.Button != null &&
-                TryGetRuntimeWorkspaceId(entry.Item.Button, out var workspaceId))
-            {
-                var workspaceName = entry.Title;
-                button.RightTapped += (_, e) =>
-                {
-                    e.Handled = true;
-                    var menu = new MenuFlyout();
-                    var renameItem = new MenuFlyoutItem
-                    {
-                        Text = "Rename workspace",
-                    };
-                    renameItem.Click += async (_, __) =>
-                    {
-                        HideRadialMenu();
-                        await RenameRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
-                    };
-                    var removeItem = new MenuFlyoutItem
-                    {
-                        Text = "Remove workspace",
-                    };
-                    removeItem.Click += async (_, __) =>
-                    {
-                        HideRadialMenu();
-                        await RemoveRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
-                    };
-                    menu.Items.Add(renameItem);
-                    menu.Items.Add(removeItem);
-                    menu.ShowAt(button, e.GetPosition(button));
-                };
-            }
-
             return button;
         }
 

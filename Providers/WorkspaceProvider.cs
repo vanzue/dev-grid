@@ -242,6 +242,16 @@ namespace TopToolbar.Providers
                 {
                     return true;
                 }
+
+                if (!string.Equals(o.WorkspaceKind ?? string.Empty, n.WorkspaceKind ?? string.Empty, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+                if (!string.Equals(o.ParentWorkspaceId ?? string.Empty, n.ParentWorkspaceId ?? string.Empty, StringComparison.Ordinal))
+                {
+                    return true;
+                }
             }
 
             return false;
@@ -551,14 +561,18 @@ namespace TopToolbar.Providers
                 {
                     Id = BuildButtonIdInternal(workspace.Id),
                     Name = workspace.DisplayName,
-                    Description = workspace.Id,
+                    Description = string.Equals(workspace.WorkspaceKind, WorkspaceKinds.Cold, StringComparison.OrdinalIgnoreCase)
+                        ? $"Cold · {workspace.Id}"
+                        : $"Hot · {workspace.Id}",
                     IconGlyph = "\uE7F4",
                     IconType = ToolbarIconType.Catalog,
+                    IsDimmed = string.Equals(workspace.WorkspaceKind, WorkspaceKinds.Cold, StringComparison.OrdinalIgnoreCase),
                     Action = new ToolbarAction
                     {
                         Type = ToolbarActionType.Provider,
                         ProviderId = Id,
                         ProviderActionId = WorkspacePrefix + workspace.Id,
+                        ProviderArgumentsJson = BuildWorkspaceActionArgumentsJson(workspace),
                     },
                 };
 
@@ -659,6 +673,29 @@ namespace TopToolbar.Providers
             return string.Join("|", icon.Type.ToString(), icon.Path ?? string.Empty, icon.Glyph ?? string.Empty, icon.CatalogId ?? string.Empty);
         }
 
+        private static string BuildWorkspaceActionArgumentsJson(WorkspaceRecord workspace)
+        {
+            if (workspace == null)
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                var payload = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["workspaceId"] = workspace.Id ?? string.Empty,
+                    ["workspaceKind"] = workspace.WorkspaceKind ?? string.Empty,
+                    ["parentWorkspaceId"] = workspace.ParentWorkspaceId ?? string.Empty,
+                };
+                return JsonSerializer.Serialize(payload);
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
         public async Task<ActionResult> InvokeAsync(
             string actionId,
             JsonElement? args,
@@ -707,9 +744,31 @@ namespace TopToolbar.Providers
         {
             try
             {
-                var diagnostics = await _workspacesService
-                    .LaunchWorkspaceDetailedAsync(workspaceId, cancellationToken, allowLaunchMissingWindows: false)
-                    .ConfigureAwait(false);
+                var workspace = await _definitionStore.LoadByIdAsync(workspaceId, cancellationToken).ConfigureAwait(false);
+                if (workspace == null)
+                {
+                    return new ActionResult
+                    {
+                        Ok = false,
+                        Message = "Workspace was not found.",
+                    };
+                }
+
+                WorkspaceSwitchDiagnostics diagnostics;
+                if (WorkspaceKinds.IsCold(workspace))
+                {
+                    var hotInstance = await CreateHotInstanceFromColdAsync(workspace, cancellationToken).ConfigureAwait(false);
+                    diagnostics = await _workspacesService
+                        .LaunchWorkspaceDetailedAsync(hotInstance.Id, cancellationToken, allowLaunchMissingWindows: true)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    diagnostics = await _workspacesService
+                        .LaunchWorkspaceDetailedAsync(workspaceId, cancellationToken, allowLaunchMissingWindows: false)
+                        .ConfigureAwait(false);
+                }
+
                 var messages = diagnostics?.Ok == true
                     ? diagnostics.Warnings
                     : diagnostics?.Errors;
@@ -735,6 +794,73 @@ namespace TopToolbar.Providers
                     Message = ex.Message,
                 };
             }
+        }
+
+        private async Task<WorkspaceDefinition> CreateHotInstanceFromColdAsync(
+            WorkspaceDefinition coldWorkspace,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(coldWorkspace);
+
+            var now = DateTimeOffset.UtcNow;
+            var hotWorkspace = CloneWorkspaceDefinition(coldWorkspace);
+            hotWorkspace.Id = Guid.NewGuid().ToString("N");
+            hotWorkspace.RuntimeSessionOnly = true;
+            hotWorkspace.RuntimeSessionId = WorkspaceRuntimeSession.SessionId;
+            hotWorkspace.WorkspaceKind = WorkspaceKinds.Hot;
+            hotWorkspace.ParentWorkspaceId = coldWorkspace.Id?.Trim() ?? string.Empty;
+            hotWorkspace.CreationTime = now.ToUnixTimeSeconds();
+            hotWorkspace.LastLaunchedTime = null;
+            hotWorkspace.MoveExistingWindows = true;
+            hotWorkspace.Name = string.IsNullOrWhiteSpace(coldWorkspace.Name)
+                ? "hot"
+                : $"{coldWorkspace.Name.Trim()} · {now:HH:mm:ss}";
+
+            if (hotWorkspace.Applications != null)
+            {
+                foreach (var app in hotWorkspace.Applications)
+                {
+                    if (app == null)
+                    {
+                        continue;
+                    }
+
+                    app.LaunchNewIfUnbound = true;
+                }
+            }
+
+            await _definitionStore.SaveWorkspaceAsync(hotWorkspace, cancellationToken).ConfigureAwait(false);
+
+            string thumbnailPath = null;
+            try
+            {
+                thumbnailPath = _thumbnailRenderer.Render(hotWorkspace);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"WorkspaceProvider: failed to render thumbnail for launched hot workspace '{hotWorkspace.Id}' - {ex.Message}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(thumbnailPath))
+            {
+                var previousPath = await _buttonStore.SetWorkspaceIconAsync(hotWorkspace, thumbnailPath, cancellationToken)
+                    .ConfigureAwait(false);
+                DeletePreviousWorkspaceIcon(hotWorkspace.Id, previousPath, thumbnailPath);
+            }
+            else
+            {
+                await _buttonStore.EnsureButtonAsync(hotWorkspace, cancellationToken).ConfigureAwait(false);
+            }
+
+            try
+            {
+                await ReloadIfChangedAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+
+            return hotWorkspace;
         }
 
         private async Task<IReadOnlyList<WorkspaceRecord>> ReadWorkspacesFileAsync(CancellationToken cancellationToken)
@@ -767,9 +893,11 @@ namespace TopToolbar.Providers
                     continue;
                 }
 
-                if (!WorkspaceRuntimeSession.IsCurrentSession(workspace.RuntimeSessionId))
+                var kind = WorkspaceKinds.Normalize(workspace.WorkspaceKind, workspace.RuntimeSessionOnly);
+                var isHot = string.Equals(kind, WorkspaceKinds.Hot, StringComparison.OrdinalIgnoreCase);
+                if (isHot && !WorkspaceRuntimeSession.IsCurrentSession(workspace.RuntimeSessionId))
                 {
-                    // Workspace instances are session-scoped and should not survive app restart.
+                    // Hot workspace instances are session-scoped and should not survive app restart.
                     continue;
                 }
 
@@ -789,14 +917,49 @@ namespace TopToolbar.Providers
                     lastLaunchedTime,
                     icon,
                     iconSignature,
-                    enabled));
+                    enabled,
+                    kind,
+                    workspace.ParentWorkspaceId?.Trim() ?? string.Empty));
             }
 
-            return records
+            var coldRecords = records
+                .Where(record => string.Equals(record.WorkspaceKind, WorkspaceKinds.Cold, StringComparison.OrdinalIgnoreCase))
                 .OrderBy(record => record.DisplayName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                .ThenByDescending(record => record.LastLaunchedTime)
                 .ThenBy(record => record.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+
+            var hotRecords = records
+                .Where(record => string.Equals(record.WorkspaceKind, WorkspaceKinds.Hot, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var ordered = new List<WorkspaceRecord>(records.Count);
+            var attachedHotIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var cold in coldRecords)
+            {
+                ordered.Add(cold);
+
+                var attached = hotRecords
+                    .Where(hot => string.Equals(hot.ParentWorkspaceId, cold.Id, StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(hot => hot.LastLaunchedTime)
+                    .ThenBy(hot => hot.DisplayName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(hot => hot.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                foreach (var hot in attached)
+                {
+                    attachedHotIds.Add(hot.Id);
+                    ordered.Add(hot);
+                }
+            }
+
+            var standaloneHots = hotRecords
+                .Where(hot => !attachedHotIds.Contains(hot.Id))
+                .OrderByDescending(hot => hot.LastLaunchedTime)
+                .ThenBy(hot => hot.DisplayName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(hot => hot.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+
+            ordered.AddRange(standaloneHots);
+            return ordered;
         }
 
         private static string ResolveDisplayTitle(WorkspaceDefinition workspace, string fallbackId)
@@ -807,6 +970,198 @@ namespace TopToolbar.Providers
             }
 
             return fallbackId ?? string.Empty;
+        }
+
+        internal async Task<bool> IsColdWorkspaceAsync(string workspaceId, CancellationToken cancellationToken)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, nameof(WorkspaceProvider));
+            if (string.IsNullOrWhiteSpace(workspaceId))
+            {
+                return false;
+            }
+
+            var workspace = await _definitionStore.LoadByIdAsync(workspaceId.Trim(), cancellationToken).ConfigureAwait(false);
+            return WorkspaceKinds.IsCold(workspace);
+        }
+
+        internal async Task<bool> IsHotWorkspaceAsync(string workspaceId, CancellationToken cancellationToken)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, nameof(WorkspaceProvider));
+            if (string.IsNullOrWhiteSpace(workspaceId))
+            {
+                return false;
+            }
+
+            var workspace = await _definitionStore.LoadByIdAsync(workspaceId.Trim(), cancellationToken).ConfigureAwait(false);
+            return WorkspaceKinds.IsHot(workspace);
+        }
+
+        internal int HideWorkspaceWindows(string workspaceId)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, nameof(WorkspaceProvider));
+            return _workspacesService.HideWorkspaceWindows(workspaceId);
+        }
+
+        internal int KillWorkspaceWindows(string workspaceId)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, nameof(WorkspaceProvider));
+            return _workspacesService.KillWorkspaceWindows(workspaceId);
+        }
+
+        internal async Task<WorkspaceDefinition> PersistHotWorkspaceAsync(
+            string hotWorkspaceId,
+            string coldWorkspaceName,
+            CancellationToken cancellationToken)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, nameof(WorkspaceProvider));
+            var normalizedId = hotWorkspaceId?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedId))
+            {
+                return null;
+            }
+
+            var hotWorkspace = await _definitionStore.LoadByIdAsync(normalizedId, cancellationToken).ConfigureAwait(false);
+            if (!WorkspaceKinds.IsHot(hotWorkspace))
+            {
+                return null;
+            }
+
+            var coldWorkspace = CloneWorkspaceDefinition(hotWorkspace);
+            coldWorkspace.Id = Guid.NewGuid().ToString("N");
+            coldWorkspace.RuntimeSessionOnly = false;
+            coldWorkspace.RuntimeSessionId = string.Empty;
+            coldWorkspace.WorkspaceKind = WorkspaceKinds.Cold;
+            coldWorkspace.ParentWorkspaceId = string.Empty;
+            coldWorkspace.LastLaunchedTime = null;
+            coldWorkspace.CreationTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            coldWorkspace.Name = string.IsNullOrWhiteSpace(coldWorkspaceName)
+                ? hotWorkspace.Name?.Trim() ?? $"cold-{coldWorkspace.Id[..6]}"
+                : coldWorkspaceName.Trim();
+
+            await _definitionStore.SaveWorkspaceAsync(coldWorkspace, cancellationToken).ConfigureAwait(false);
+
+            hotWorkspace.ParentWorkspaceId = coldWorkspace.Id;
+            await _definitionStore.SaveWorkspaceAsync(hotWorkspace, cancellationToken).ConfigureAwait(false);
+
+            try
+            {
+                var thumbnailPath = _thumbnailRenderer.Render(coldWorkspace);
+                if (!string.IsNullOrWhiteSpace(thumbnailPath))
+                {
+                    var previousPath = await _buttonStore.SetWorkspaceIconAsync(coldWorkspace, thumbnailPath, cancellationToken)
+                        .ConfigureAwait(false);
+                    DeletePreviousWorkspaceIcon(coldWorkspace.Id, previousPath, thumbnailPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"WorkspaceProvider: failed to render persisted cold workspace thumbnail '{coldWorkspace.Id}' - {ex.Message}");
+            }
+
+            await _buttonStore.EnsureButtonAsync(coldWorkspace, cancellationToken).ConfigureAwait(false);
+            await _buttonStore.EnsureButtonAsync(hotWorkspace, cancellationToken).ConfigureAwait(false);
+            await ReloadIfChangedAsync().ConfigureAwait(false);
+            return coldWorkspace;
+        }
+
+        private static WorkspaceDefinition CloneWorkspaceDefinition(WorkspaceDefinition source)
+        {
+            if (source == null)
+            {
+                return new WorkspaceDefinition();
+            }
+
+            return new WorkspaceDefinition
+            {
+                Id = source.Id ?? string.Empty,
+                Name = source.Name ?? string.Empty,
+                FocusedApplicationId = source.FocusedApplicationId ?? string.Empty,
+                CreationTime = source.CreationTime,
+                LastLaunchedTime = source.LastLaunchedTime,
+                IsShortcutNeeded = source.IsShortcutNeeded,
+                MoveExistingWindows = source.MoveExistingWindows,
+                RuntimeSessionOnly = source.RuntimeSessionOnly,
+                RuntimeSessionId = source.RuntimeSessionId ?? string.Empty,
+                WorkspaceKind = WorkspaceKinds.Normalize(source.WorkspaceKind, source.RuntimeSessionOnly),
+                ParentWorkspaceId = source.ParentWorkspaceId ?? string.Empty,
+                Monitors = source.Monitors?
+                    .Select(monitor => new MonitorDefinition
+                    {
+                        Id = monitor?.Id ?? string.Empty,
+                        InstanceId = monitor?.InstanceId ?? string.Empty,
+                        Number = monitor?.Number ?? 0,
+                        Dpi = monitor?.Dpi ?? 0,
+                        DpiAwareRect = monitor?.DpiAwareRect == null
+                            ? new MonitorDefinition.MonitorRect()
+                            : new MonitorDefinition.MonitorRect
+                            {
+                                Left = monitor.DpiAwareRect.Left,
+                                Top = monitor.DpiAwareRect.Top,
+                                Width = monitor.DpiAwareRect.Width,
+                                Height = monitor.DpiAwareRect.Height,
+                            },
+                        DpiUnawareRect = monitor?.DpiUnawareRect == null
+                            ? new MonitorDefinition.MonitorRect()
+                            : new MonitorDefinition.MonitorRect
+                            {
+                                Left = monitor.DpiUnawareRect.Left,
+                                Top = monitor.DpiUnawareRect.Top,
+                                Width = monitor.DpiUnawareRect.Width,
+                                Height = monitor.DpiUnawareRect.Height,
+                            },
+                        DpiAwareWorkRect = monitor?.DpiAwareWorkRect == null
+                            ? new MonitorDefinition.MonitorRect()
+                            : new MonitorDefinition.MonitorRect
+                            {
+                                Left = monitor.DpiAwareWorkRect.Left,
+                                Top = monitor.DpiAwareWorkRect.Top,
+                                Width = monitor.DpiAwareWorkRect.Width,
+                                Height = monitor.DpiAwareWorkRect.Height,
+                            },
+                        DpiUnawareWorkRect = monitor?.DpiUnawareWorkRect == null
+                            ? new MonitorDefinition.MonitorRect()
+                            : new MonitorDefinition.MonitorRect
+                            {
+                                Left = monitor.DpiUnawareWorkRect.Left,
+                                Top = monitor.DpiUnawareWorkRect.Top,
+                                Width = monitor.DpiUnawareWorkRect.Width,
+                                Height = monitor.DpiUnawareWorkRect.Height,
+                            },
+                    })
+                    .ToList() ?? new List<MonitorDefinition>(),
+                Applications = source.Applications?
+                    .Select(app => new ApplicationDefinition
+                    {
+                        Id = app?.Id ?? string.Empty,
+                        Name = app?.Name ?? string.Empty,
+                        Role = app?.Role ?? string.Empty,
+                        Title = app?.Title ?? string.Empty,
+                        Path = app?.Path ?? string.Empty,
+                        PackageFullName = app?.PackageFullName ?? string.Empty,
+                        AppUserModelId = app?.AppUserModelId ?? string.Empty,
+                        PwaAppId = app?.PwaAppId ?? string.Empty,
+                        CommandLineArguments = app?.CommandLineArguments ?? string.Empty,
+                        WorkingDirectory = app?.WorkingDirectory ?? string.Empty,
+                        IsElevated = app?.IsElevated ?? false,
+                        CanLaunchElevated = app?.CanLaunchElevated ?? false,
+                        LaunchNewIfUnbound = app?.LaunchNewIfUnbound ?? false,
+                        Minimized = app?.Minimized ?? false,
+                        Maximized = app?.Maximized ?? false,
+                        MonitorIndex = app?.MonitorIndex ?? 0,
+                        ZOrder = app?.ZOrder ?? 0,
+                        Version = app?.Version ?? string.Empty,
+                        Position = app?.Position == null
+                            ? new ApplicationDefinition.ApplicationPosition()
+                            : new ApplicationDefinition.ApplicationPosition
+                            {
+                                X = app.Position.X,
+                                Y = app.Position.Y,
+                                Width = app.Position.Width,
+                                Height = app.Position.Height,
+                            },
+                    })
+                    .ToList() ?? new List<ApplicationDefinition>(),
+            };
         }
 
         public void Dispose()
@@ -875,6 +1230,8 @@ namespace TopToolbar.Providers
             long LastLaunchedTime,
             ProviderIcon Icon,
             string IconSignature,
-            bool Enabled);
+            bool Enabled,
+            string WorkspaceKind,
+            string ParentWorkspaceId);
     }
 }

@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using TopToolbar.Logging;
@@ -93,6 +94,78 @@ namespace TopToolbar.Services.Workspaces
         {
             ObjectDisposedException.ThrowIf(_disposed, nameof(WorkspacesRuntimeService));
             return _launcher.LaunchWorkspaceAsync(workspaceId, cancellationToken, progress: null, allowLaunchMissingWindows);
+        }
+
+        public int HideWorkspaceWindows(string workspaceId)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, nameof(WorkspacesRuntimeService));
+            if (string.IsNullOrWhiteSpace(workspaceId))
+            {
+                return 0;
+            }
+
+            var hiddenCount = 0;
+            var handles = _managedWindows.GetWorkspaceWindows(workspaceId.Trim());
+            foreach (var handle in handles)
+            {
+                if (handle == IntPtr.Zero)
+                {
+                    continue;
+                }
+
+                NativeWindowHelper.MinimizeWindow(handle);
+                hiddenCount++;
+            }
+
+            return hiddenCount;
+        }
+
+        public int KillWorkspaceWindows(string workspaceId)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, nameof(WorkspacesRuntimeService));
+            if (string.IsNullOrWhiteSpace(workspaceId))
+            {
+                return 0;
+            }
+
+            var normalizedWorkspaceId = workspaceId.Trim();
+            var handles = _managedWindows.GetWorkspaceWindows(normalizedWorkspaceId);
+            if (handles.Count == 0)
+            {
+                return 0;
+            }
+
+            var processIds = new HashSet<int>();
+            foreach (var handle in handles)
+            {
+                if (NativeWindowHelper.TryCreateWindowInfo(handle, out var info)
+                    && info?.ProcessId > 0)
+                {
+                    processIds.Add((int)info.ProcessId);
+                }
+            }
+
+            var killedCount = 0;
+            foreach (var processId in processIds)
+            {
+                try
+                {
+                    using var process = Process.GetProcessById(processId);
+                    if (process.HasExited)
+                    {
+                        continue;
+                    }
+
+                    process.Kill(entireProcessTree: true);
+                    killedCount++;
+                }
+                catch
+                {
+                }
+            }
+
+            _managedWindows.ClearWorkspace(normalizedWorkspaceId);
+            return killedCount;
         }
 
         public void Dispose()

@@ -146,6 +146,8 @@ namespace TopToolbar.Services.Workspaces
                 MoveExistingWindows = true,
                 RuntimeSessionOnly = true,
                 RuntimeSessionId = WorkspaceRuntimeSession.SessionId,
+                WorkspaceKind = WorkspaceKinds.Hot,
+                ParentWorkspaceId = string.Empty,
                 FocusedApplicationId = focusedApplicationId,
                 Applications = applications,
             };

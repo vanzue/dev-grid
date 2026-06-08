@@ -36,6 +36,12 @@ namespace TopToolbar.Services.Workspaces
         [JsonPropertyName("runtime-session-id")]
         public string RuntimeSessionId { get; set; } = string.Empty;
 
+        [JsonPropertyName("workspace-kind")]
+        public string WorkspaceKind { get; set; } = WorkspaceKinds.Hot;
+
+        [JsonPropertyName("parent-workspace-id")]
+        public string ParentWorkspaceId { get; set; } = string.Empty;
+
         [JsonPropertyName("monitor-configuration")]
         public List<MonitorDefinition> Monitors { get; set; } = new();
 

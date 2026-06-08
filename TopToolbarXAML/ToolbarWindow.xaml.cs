@@ -283,7 +283,7 @@ namespace TopToolbar
             }
         }
 
-        private void OnToolbarButtonRightTapped(object sender, RightTappedRoutedEventArgs e)
+        private async void OnToolbarButtonRightTapped(object sender, RightTappedRoutedEventArgs e)
         {
             if (sender is not FrameworkElement fe ||
                 fe.Tag is not ToolbarButtonItem item ||
@@ -293,28 +293,94 @@ namespace TopToolbar
             }
 
             e.Handled = true;
-
+            var showPosition = e.GetPosition(fe);
             var workspaceName = item.Button.DisplayName;
-            var menu = new MenuFlyout();
-            var renameItem = new MenuFlyoutItem
+
+            bool isHot;
+            bool isCold;
+            try
             {
-                Text = "Rename workspace",
-            };
-            renameItem.Click += async (_, _) =>
+                if (!_providerRuntime.TryGetProvider(WorkspaceProviderId, out var provider) ||
+                    provider is not WorkspaceProvider workspaceProvider)
+                {
+                    return;
+                }
+
+                isHot = await workspaceProvider.IsHotWorkspaceAsync(workspaceId, CancellationToken.None)
+                    .ConfigureAwait(false);
+                isCold = !isHot && await workspaceProvider.IsColdWorkspaceAsync(workspaceId, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
             {
-                await RenameRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
-            };
-            var removeItem = new MenuFlyoutItem
+                _notificationService.ShowError("Failed to load workspace actions: " + ex.Message);
+                return;
+            }
+
+            await RunOnUiThreadAsync(() =>
             {
-                Text = "Remove workspace",
-            };
-            removeItem.Click += async (_, _) =>
-            {
-                await RemoveRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
-            };
-            menu.Items.Add(renameItem);
-            menu.Items.Add(removeItem);
-            menu.ShowAt(fe, e.GetPosition(fe));
+                var menu = new MenuFlyout();
+                var persistItem = new MenuFlyoutItem
+                {
+                    Text = "Persist as cold workspace",
+                };
+                persistItem.Click += async (_, _) =>
+                {
+                    await PersistRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
+                };
+                var hideItem = new MenuFlyoutItem
+                {
+                    Text = "Hide workspace windows",
+                };
+                hideItem.Click += async (_, _) =>
+                {
+                    await HideRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
+                };
+                var killItem = new MenuFlyoutItem
+                {
+                    Text = "Kill workspace windows",
+                };
+                killItem.Click += async (_, _) =>
+                {
+                    await KillRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
+                };
+                var renameItem = new MenuFlyoutItem
+                {
+                    Text = "Rename workspace",
+                };
+                renameItem.Click += async (_, _) =>
+                {
+                    await RenameRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
+                };
+                var deleteItem = new MenuFlyoutItem
+                {
+                    Text = "Remove workspace",
+                };
+                deleteItem.Click += async (_, _) =>
+                {
+                    await RemoveRuntimeWorkspaceAsync(workspaceId, workspaceName).ConfigureAwait(true);
+                };
+
+                if (isHot)
+                {
+                    menu.Items.Add(persistItem);
+                    menu.Items.Add(hideItem);
+                    menu.Items.Add(killItem);
+                    menu.Items.Add(new MenuFlyoutSeparator());
+                    menu.Items.Add(deleteItem);
+                }
+                else if (isCold)
+                {
+                    menu.Items.Add(renameItem);
+                    menu.Items.Add(deleteItem);
+                }
+                else
+                {
+                    menu.Items.Add(deleteItem);
+                }
+
+                menu.ShowAt(fe, showPosition);
+            }).ConfigureAwait(false);
         }
 
         private void OnToolbarScrollViewerPointerWheelChanged(object sender, PointerRoutedEventArgs e)
@@ -448,6 +514,140 @@ namespace TopToolbar
             {
                 _notificationService.ShowError("Failed to remove workspace: " + ex.Message);
             }
+        }
+
+        private async System.Threading.Tasks.Task PersistRuntimeWorkspaceAsync(
+            string workspaceId,
+            string workspaceName)
+        {
+            var normalizedWorkspaceId = workspaceId?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedWorkspaceId))
+            {
+                return;
+            }
+
+            try
+            {
+                if (!_providerRuntime.TryGetProvider(WorkspaceProviderId, out var provider) ||
+                    provider is not WorkspaceProvider workspaceProvider)
+                {
+                    _notificationService.ShowError("Workspace provider is unavailable.");
+                    return;
+                }
+
+                var defaultName = string.IsNullOrWhiteSpace(workspaceName)
+                    ? "Cold workspace"
+                    : $"{workspaceName.Trim()} template";
+                var newName = await _toastWindow
+                    .ShowInputPromptAsync(
+                        "Persist as cold workspace",
+                        "Save this hot workspace as a reusable cold template.",
+                        "Workspace name",
+                        defaultName,
+                        fieldLabel: "Cold workspace name",
+                        confirmButtonText: "Persist",
+                        subtitle: workspaceName)
+                    .ConfigureAwait(true);
+
+                if (string.IsNullOrWhiteSpace(newName))
+                {
+                    return;
+                }
+
+                var cold = await workspaceProvider.PersistHotWorkspaceAsync(
+                        normalizedWorkspaceId,
+                        newName.Trim(),
+                        CancellationToken.None)
+                    .ConfigureAwait(true);
+                if (cold == null)
+                {
+                    _notificationService.ShowError("Workspace is not a hot instance.");
+                    return;
+                }
+
+                await RefreshDynamicProviderGroupsAsync(CancellationToken.None).ConfigureAwait(true);
+                _notificationService.ShowSuccess($"Persisted cold workspace '{cold.Name}'.");
+            }
+            catch (Exception ex)
+            {
+                _notificationService.ShowError("Failed to persist workspace: " + ex.Message);
+            }
+        }
+
+        private async System.Threading.Tasks.Task HideRuntimeWorkspaceAsync(
+            string workspaceId,
+            string workspaceName)
+        {
+            var normalizedWorkspaceId = workspaceId?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedWorkspaceId))
+            {
+                return;
+            }
+
+            try
+            {
+                if (!_providerRuntime.TryGetProvider(WorkspaceProviderId, out var provider) ||
+                    provider is not WorkspaceProvider workspaceProvider)
+                {
+                    _notificationService.ShowError("Workspace provider is unavailable.");
+                    return;
+                }
+
+                var hidden = workspaceProvider.HideWorkspaceWindows(normalizedWorkspaceId);
+                var label = string.IsNullOrWhiteSpace(workspaceName) ? normalizedWorkspaceId : workspaceName.Trim();
+                if (hidden > 0)
+                {
+                    _notificationService.ShowSuccess($"Hidden {hidden} window(s) for '{label}'.");
+                }
+                else
+                {
+                    _notificationService.ShowWarning($"No live windows found for '{label}'.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _notificationService.ShowError("Failed to hide workspace windows: " + ex.Message);
+            }
+
+            await RefreshDynamicProviderGroupsAsync(CancellationToken.None).ConfigureAwait(true);
+        }
+
+        private async System.Threading.Tasks.Task KillRuntimeWorkspaceAsync(
+            string workspaceId,
+            string workspaceName)
+        {
+            var normalizedWorkspaceId = workspaceId?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedWorkspaceId))
+            {
+                return;
+            }
+
+            try
+            {
+                if (!_providerRuntime.TryGetProvider(WorkspaceProviderId, out var provider) ||
+                    provider is not WorkspaceProvider workspaceProvider)
+                {
+                    _notificationService.ShowError("Workspace provider is unavailable.");
+                    return;
+                }
+
+                var killed = workspaceProvider.KillWorkspaceWindows(normalizedWorkspaceId);
+                var label = string.IsNullOrWhiteSpace(workspaceName) ? normalizedWorkspaceId : workspaceName.Trim();
+                if (killed > 0)
+                {
+                    _notificationService.ShowSuccess($"Killed {killed} process(es) for '{label}'.");
+                }
+                else
+                {
+                    _notificationService.ShowWarning($"No live processes found for '{label}'.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _notificationService.ShowError("Failed to kill workspace windows: " + ex.Message);
+            }
+
+            await RefreshDynamicProviderGroupsAsync(CancellationToken.None).ConfigureAwait(true);
         }
 
         private async System.Threading.Tasks.Task RenameRuntimeWorkspaceAsync(

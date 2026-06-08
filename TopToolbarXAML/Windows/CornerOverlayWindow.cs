@@ -4,6 +4,7 @@
 
 using System;
 using System.Runtime.InteropServices;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -61,6 +62,11 @@ namespace TopToolbar
         private double _metricScale = 1.0;
         private DateTime _lastPlacementLogUtc = DateTime.MinValue;
         private string _lastPlacementLogSignature = string.Empty;
+        private DispatcherQueueTimer _hintStabilizeTimer;
+        private HotCorner _pendingHintCorner;
+        private DisplayRect _pendingHintBounds;
+        private double _pendingHintScale = 1.0;
+        private string _pendingHintLabel = string.Empty;
 
         private delegate IntPtr WndProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
@@ -157,6 +163,11 @@ namespace TopToolbar
 
         public void ShowHint(HotCorner corner, DisplayRect bounds, double scale, string label)
         {
+            ShowHintCore(corner, bounds, scale, label, scheduleStabilize: true);
+        }
+
+        private void ShowHintCore(HotCorner corner, DisplayRect bounds, double scale, string label, bool scheduleStabilize)
+        {
             if (_disposed)
             {
                 return;
@@ -194,6 +205,10 @@ namespace TopToolbar
                 _hintLabel.Opacity = string.IsNullOrWhiteSpace(_hintLabel.Text) ? 0.0 : 0.46;
                 PositionHintLabel(corner);
                 MakeTopMost();
+                if (scheduleStabilize)
+                {
+                    ScheduleHintStabilize(corner, bounds, scale, label);
+                }
             }
             catch (Exception ex)
             {
@@ -277,6 +292,47 @@ namespace TopToolbar
             _root.RenderTransform = null;
         }
 
+        private void ScheduleHintStabilize(HotCorner corner, DisplayRect bounds, double scale, string label)
+        {
+            var dispatcher = DispatcherQueue;
+            if (dispatcher == null)
+            {
+                return;
+            }
+
+            _pendingHintCorner = corner;
+            _pendingHintBounds = bounds;
+            _pendingHintScale = scale > 0 ? scale : 1.0;
+            _pendingHintLabel = label ?? string.Empty;
+
+            _hintStabilizeTimer ??= CreateHintStabilizeTimer(dispatcher);
+            _hintStabilizeTimer.Stop();
+            _hintStabilizeTimer.Start();
+        }
+
+        private DispatcherQueueTimer CreateHintStabilizeTimer(DispatcherQueue dispatcher)
+        {
+            var timer = dispatcher.CreateTimer();
+            timer.IsRepeating = false;
+            timer.Interval = TimeSpan.FromMilliseconds(30);
+            timer.Tick += (_, _) =>
+            {
+                if (_disposed || !_shown)
+                {
+                    return;
+                }
+
+                ShowHintCore(
+                    _pendingHintCorner,
+                    _pendingHintBounds,
+                    _pendingHintScale,
+                    _pendingHintLabel,
+                    scheduleStabilize: false);
+            };
+
+            return timer;
+        }
+
         public void Hide()
         {
             if (!_shown)
@@ -285,6 +341,7 @@ namespace TopToolbar
             }
 
             _shown = false;
+            _hintStabilizeTimer?.Stop();
             try
             {
                 AppWindow.Hide();
@@ -367,10 +424,15 @@ namespace TopToolbar
 
         private double ResolveXamlScale(double fallbackScale)
         {
-            var scale = _root.XamlRoot?.RasterizationScale ?? fallbackScale;
+            // Keep hint geometry tied to the requested monitor scale so the idle hint
+            // and the hover animation start frame are computed from the same metrics.
+            // XamlRoot.RasterizationScale can lag or differ during the initial hidden
+            // hint pass, which causes the corner radius/arc size to drift until the
+            // user hovers once.
+            var scale = fallbackScale;
             if (scale <= 0)
             {
-                scale = fallbackScale;
+                scale = _root.XamlRoot?.RasterizationScale ?? 1.0;
             }
 
             return scale > 0 ? scale : 1.0;
@@ -762,6 +824,13 @@ namespace TopToolbar
             }
 
             _disposed = true;
+            try
+            {
+                _hintStabilizeTimer?.Stop();
+            }
+            catch
+            {
+            }
             UnhookPassthrough();
             try
             {

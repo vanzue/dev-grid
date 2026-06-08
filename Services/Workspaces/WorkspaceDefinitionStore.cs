@@ -406,8 +406,12 @@ namespace TopToolbar.Services.Workspaces
                 return false;
             }
 
-            // Workspace instances are runtime/session concepts. Anything not stamped
-            // with the current session id should be removed on startup.
+            if (!workspace.RuntimeSessionOnly)
+            {
+                return false;
+            }
+
+            // Only runtime (hot) instances are session-scoped. Cold workspaces persist.
             return !WorkspaceRuntimeSession.IsCurrentSession(workspace.RuntimeSessionId);
         }
 

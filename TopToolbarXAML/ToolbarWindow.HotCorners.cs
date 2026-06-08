@@ -97,6 +97,23 @@ namespace TopToolbar
 
         private void OnHotCornerHoverChanged(HotCornerHoverState state)
         {
+            if (state.Active)
+            {
+                if (TryAnimateMatchingCornerHint(state))
+                {
+                    _cornerOverlay?.Hide();
+                    return;
+                }
+            }
+            else
+            {
+                if (TryRestoreAnimatedCornerHint())
+                {
+                    _cornerOverlay?.Hide();
+                    return;
+                }
+            }
+
             _cornerOverlay?.Update(state);
 
             if (state.Active)
@@ -107,6 +124,51 @@ namespace TopToolbar
             {
                 RestoreSuppressedCornerHint();
             }
+        }
+
+        private bool TryAnimateMatchingCornerHint(HotCornerHoverState state)
+        {
+            foreach (var hint in _cornerHintOverlays)
+            {
+                if (hint.Corner != state.Corner || !hint.Bounds.Equals(state.MonitorBounds))
+                {
+                    continue;
+                }
+
+                _suppressedHintCorner = state.Corner;
+                _suppressedHintBounds = state.MonitorBounds;
+                hint.Window.Update(state);
+                hint.IsSuppressed = false;
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryRestoreAnimatedCornerHint()
+        {
+            if (_suppressedHintCorner == null)
+            {
+                return false;
+            }
+
+            foreach (var hint in _cornerHintOverlays)
+            {
+                if (hint.Corner != _suppressedHintCorner.Value || !hint.Bounds.Equals(_suppressedHintBounds))
+                {
+                    continue;
+                }
+
+                hint.Window.ShowHint(hint.Corner, hint.Bounds, hint.Scale, hint.Label);
+                hint.IsSuppressed = false;
+                _suppressedHintCorner = null;
+                _suppressedHintBounds = default;
+                return true;
+            }
+
+            _suppressedHintCorner = null;
+            _suppressedHintBounds = default;
+            return false;
         }
 
         private void OnHotCornerActionTriggered(HotCornerActionContext context)
