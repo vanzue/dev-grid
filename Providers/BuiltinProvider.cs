@@ -33,6 +33,7 @@ namespace TopToolbar.Providers
             DisposeProviders();
 
             LoadWorkspaceProvider();
+            LoadScreenshotProvider();
         }
 
         /// <summary>
@@ -79,6 +80,28 @@ namespace TopToolbar.Providers
                 try
                 {
                     AppLogger.LogWarning($"BuiltinProvider: Failed to load workspace provider: {ex.Message}");
+                }
+                catch
+                {
+                    // Ignore logging errors
+                }
+            }
+        }
+
+        /// <summary>
+        /// Loads the screenshot provider
+        /// </summary>
+        private void LoadScreenshotProvider()
+        {
+            try
+            {
+                _providers.Add(new ScreenshotProvider());
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    AppLogger.LogWarning($"BuiltinProvider: Failed to load screenshot provider: {ex.Message}");
                 }
                 catch
                 {

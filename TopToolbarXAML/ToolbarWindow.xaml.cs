@@ -42,6 +42,7 @@ namespace TopToolbar
         private Timer _monitorTimer;
         private Timer _configWatcherDebounce;
         private bool _isVisible;
+        private bool _isContextMenuOpen;
         private bool _requireCtrlForTopBarTrigger;
         private int _topBarTriggerWidth = 320;
         private bool _builtConfigOnce;
@@ -272,6 +273,12 @@ namespace TopToolbar
         {
             if (sender is FrameworkElement fe && fe.Tag is ToolbarButtonItem item)
             {
+                if (IsScreenshotAction(item.Button))
+                {
+                    await LaunchScreenshotCaptureAsync();
+                    return;
+                }
+
                 try
                 {
                     await _actionExecutor.ExecuteAsync(item.Group, item.Button, CancellationToken.None)
@@ -286,14 +293,24 @@ namespace TopToolbar
         private async void OnToolbarButtonRightTapped(object sender, RightTappedRoutedEventArgs e)
         {
             if (sender is not FrameworkElement fe ||
-                fe.Tag is not ToolbarButtonItem item ||
-                !TryGetRuntimeWorkspaceId(item.Button, out var workspaceId))
+                fe.Tag is not ToolbarButtonItem item)
             {
                 return;
             }
 
             e.Handled = true;
             var showPosition = e.GetPosition(fe);
+
+            // Non-workspace actions only get the unified pin toggles (Show on bar / Show on ring).
+            if (!TryGetRuntimeWorkspaceId(item.Button, out var workspaceId))
+            {
+                var actionMenu = new MenuFlyout();
+                AddPinMenuItems(actionMenu, item);
+                WireContextMenuAutoHide(actionMenu);
+                actionMenu.ShowAt(fe, showPosition);
+                return;
+            }
+
             var workspaceName = item.Button.DisplayName;
 
             bool isHot;
@@ -320,6 +337,11 @@ namespace TopToolbar
             await RunOnUiThreadAsync(() =>
             {
                 var menu = new MenuFlyout();
+
+                // Unified pin toggles apply to every action, including workspaces.
+                AddPinMenuItems(menu, item);
+                menu.Items.Add(new MenuFlyoutSeparator());
+
                 var persistItem = new MenuFlyoutItem
                 {
                     Text = "Persist as cold workspace",
@@ -379,8 +401,91 @@ namespace TopToolbar
                     menu.Items.Add(deleteItem);
                 }
 
+                WireContextMenuAutoHide(menu);
                 menu.ShowAt(fe, showPosition);
             }).ConfigureAwait(false);
+        }
+
+        // Adds the unified "Show on bar" / "Show on ring" pin toggles for an action.
+        private void AddPinMenuItems(MenuFlyout menu, ToolbarButtonItem item)
+        {
+            if (menu == null || item?.Button == null)
+            {
+                return;
+            }
+
+            var button = item.Button;
+
+            var barItem = new ToggleMenuFlyoutItem
+            {
+                Text = "Show on bar",
+                IsChecked = button.IsPinnedToBar,
+            };
+            barItem.Click += (s, _) =>
+            {
+                var toggle = s as ToggleMenuFlyoutItem;
+                SetActionSurface(item, ActionSurfaces.Bar, toggle?.IsChecked ?? true, toggle);
+            };
+
+            var ringItem = new ToggleMenuFlyoutItem
+            {
+                Text = "Show on ring",
+                IsChecked = button.IsPinnedToRing,
+            };
+            ringItem.Click += (s, _) =>
+            {
+                var toggle = s as ToggleMenuFlyoutItem;
+                SetActionSurface(item, ActionSurfaces.Ring, toggle?.IsChecked ?? true, toggle);
+            };
+
+            menu.Items.Add(barItem);
+            menu.Items.Add(ringItem);
+        }
+
+        // Applies a pin/unpin to a surface, persists it, and updates the live UI. An action is never
+        // allowed to be unpinned from every surface (it would become unreachable), so the last surface
+        // toggle is reverted in that case.
+        private void SetActionSurface(ToolbarButtonItem item, ActionSurfaces flag, bool on, ToggleMenuFlyoutItem source)
+        {
+            var button = item?.Button;
+            if (button == null)
+            {
+                return;
+            }
+
+            var current = button.Surfaces;
+            var next = on ? (current | flag) : (current & ~flag);
+
+            if (next == ActionSurfaces.None)
+            {
+                if (source != null)
+                {
+                    source.IsChecked = true;
+                }
+
+                return;
+            }
+
+            if (next == current)
+            {
+                return;
+            }
+
+            button.Surfaces = next;
+            ActionPinStore.Instance.Set(ActionPinStore.GetActionKey(button), next);
+        }
+
+        // The context menu can extend below the toolbar window. Suppress auto-hide while it is open so
+        // moving the cursor into lower menu items does not hide the toolbar (which would dismiss it).
+        private void WireContextMenuAutoHide(MenuFlyout menu)
+        {
+            if (menu == null)
+            {
+                return;
+            }
+
+            menu.Opened += (_, _) => _isContextMenuOpen = true;
+            menu.Closed += (_, _) => _isContextMenuOpen = false;
         }
 
         private void OnToolbarScrollViewerPointerWheelChanged(object sender, PointerRoutedEventArgs e)

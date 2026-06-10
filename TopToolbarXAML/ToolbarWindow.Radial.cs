@@ -527,12 +527,10 @@ namespace TopToolbar
 
             foreach (var group in ItemsViewModel.VisibleGroups)
             {
-                if (!IsWorkspaceGroup(group))
-                {
-                    continue;
-                }
-
-                AppendGroupButtons(entries, seen, group, "Workspace", workspaceOnly: true, hotOnly: true);
+                var labelPrefix = IsWorkspaceGroup(group)
+                    ? "Workspace"
+                    : (group?.Group?.Name ?? "Action");
+                AppendGroupButtons(entries, seen, group, labelPrefix);
             }
 
             return entries.Take(8).ToList();
@@ -572,14 +570,14 @@ namespace TopToolbar
             List<RadialEntry> entries,
             HashSet<string> seen,
             ToolbarGroupViewModel group,
-            string labelPrefix,
-            bool workspaceOnly = false,
-            bool hotOnly = false)
+            string labelPrefix)
         {
             if (entries == null || seen == null || group == null)
             {
                 return;
             }
+
+            bool isWorkspace = IsWorkspaceGroup(group);
 
             foreach (var button in group.Buttons)
             {
@@ -588,12 +586,14 @@ namespace TopToolbar
                     continue;
                 }
 
-                if (workspaceOnly && !IsWorkspaceGroup(group))
+                // Ring membership is driven by the unified pin/surface model.
+                if ((button.Button.Surfaces & ActionSurfaces.Ring) == 0)
                 {
                     continue;
                 }
 
-                if (hotOnly && button.Button.IsDimmed)
+                // Workspaces only show their "hot" (live) instances in the ring; cold workspaces are dimmed.
+                if (isWorkspace && button.Button.IsDimmed)
                 {
                     continue;
                 }
@@ -1498,7 +1498,14 @@ namespace TopToolbar
                     case RadialEntryKind.ToolbarButton:
                         if (entry.Item != null)
                         {
-                            await _actionExecutor.ExecuteAsync(entry.Item.Group, entry.Item.Button, CancellationToken.None).ConfigureAwait(false);
+                            if (IsScreenshotAction(entry.Item.Button))
+                            {
+                                await LaunchScreenshotCaptureAsync().ConfigureAwait(true);
+                            }
+                            else
+                            {
+                                await _actionExecutor.ExecuteAsync(entry.Item.Group, entry.Item.Button, CancellationToken.None).ConfigureAwait(false);
+                            }
                         }
                         break;
                     case RadialEntryKind.Snapshot:

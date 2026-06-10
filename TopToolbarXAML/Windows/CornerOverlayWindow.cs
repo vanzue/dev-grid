@@ -28,11 +28,6 @@ namespace TopToolbar
         private const double GlowRadiusDip = SizeDip * 1.05;
         private const double ArcRadiusDip = SizeDip * 0.72;
         private const double ArcThicknessDip = 6.0;
-        private const double HintLabelWidthDip = 96.0;
-        private const double HintLabelInsetDip = 32.0;
-        private const double HintLabelBottomOffsetDip = 50.0;
-        private const double HintLabelTopOffsetDip = 46.0;
-
         private static readonly IntPtr HwndTopMost = new(-1);
         private const uint SwpNoSize = 0x0001;
         private const uint SwpNoMove = 0x0002;
@@ -42,9 +37,10 @@ namespace TopToolbar
 
         private readonly Canvas _root;
         private readonly Ellipse _glow;
+        private readonly Ellipse _core;
+        private readonly Ellipse _border;
         private readonly Path _track;
         private readonly Path _progress;
-        private readonly TextBlock _hintLabel;
 
         private Color _accent = Color.FromArgb(0xFF, 0xD1, 0x34, 0x38);
         private Color _label = Color.FromArgb(0xFF, 0x2F, 0x3A, 0x3F);
@@ -84,6 +80,22 @@ namespace TopToolbar
                 IsHitTestVisible = false,
             };
 
+            _core = new Ellipse
+            {
+                Width = ArcRadiusDip * 2,
+                Height = ArcRadiusDip * 2,
+                IsHitTestVisible = false,
+            };
+
+            _border = new Ellipse
+            {
+                Width = ArcRadiusDip * 2,
+                Height = ArcRadiusDip * 2,
+                Fill = null,
+                IsHitTestVisible = false,
+                Opacity = 0.0,
+            };
+
             _track = new Path
             {
                 StrokeThickness = ArcThicknessDip,
@@ -101,16 +113,6 @@ namespace TopToolbar
                 IsHitTestVisible = false,
             };
 
-            _hintLabel = new TextBlock
-            {
-                Width = HintLabelWidthDip,
-                FontSize = 12,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                IsHitTestVisible = false,
-                Opacity = 0.0,
-            };
-
             _root = new Canvas
             {
                 Width = SizeDip,
@@ -119,9 +121,10 @@ namespace TopToolbar
                 IsHitTestVisible = false,
             };
             _root.Children.Add(_glow);
+            _root.Children.Add(_core);
+            _root.Children.Add(_border);
             _root.Children.Add(_track);
             _root.Children.Add(_progress);
-            _root.Children.Add(_hintLabel);
 
             Content = _root;
 
@@ -201,9 +204,6 @@ namespace TopToolbar
                 ResetRootTransform();
                 BuildGeometry(corner);
                 UpdateProgress(corner, 0.0);
-                _hintLabel.Text = string.IsNullOrWhiteSpace(label) ? string.Empty : label.Trim();
-                _hintLabel.Opacity = string.IsNullOrWhiteSpace(_hintLabel.Text) ? 0.0 : 0.46;
-                PositionHintLabel(corner);
                 MakeTopMost();
                 if (scheduleStabilize)
                 {
@@ -488,33 +488,49 @@ namespace TopToolbar
         {
             var (cx, cy, _) = CornerGeometry(corner);
 
-            var glowRadius = Scaled(GlowRadiusDip);
+            var glowRadius = Scaled(ArcRadiusDip * 0.92);
             _glow.Width = glowRadius * 2.0;
             _glow.Height = glowRadius * 2.0;
             Canvas.SetLeft(_glow, cx - glowRadius);
             Canvas.SetTop(_glow, cy - glowRadius);
 
-            // Full quarter track arc (faint).
+            var coreRadius = Scaled(ArcRadiusDip);
+            _core.Width = coreRadius * 2.0;
+            _core.Height = coreRadius * 2.0;
+            Canvas.SetLeft(_core, cx - coreRadius);
+            Canvas.SetTop(_core, cy - coreRadius);
+
+            var borderRadius = coreRadius + Scaled(4.0);
+            _border.Width = borderRadius * 2.0;
+            _border.Height = borderRadius * 2.0;
+            Canvas.SetLeft(_border, cx - borderRadius);
+            Canvas.SetTop(_border, cy - borderRadius);
+
+            // Keep the legacy arc elements disabled; the circular hover treatment uses
+            // the themed glow/core/border layers instead.
             _track.StrokeThickness = Scaled(ArcThicknessDip);
             _progress.StrokeThickness = Scaled(ArcThicknessDip);
-            _track.Data = BuildArc(corner, 1.0, Scaled(ArcRadiusDip));
+            _track.Data = null;
+            _progress.Data = null;
         }
 
         private void UpdateProgress(HotCorner corner, double progress)
         {
             progress = Math.Clamp(progress, 0.0, 1.0);
 
-            // Glow grows and brightens with progress for a responsive feel.
-            var eased = 0.35 + (0.65 * progress);
-            _glow.Opacity = eased;
-            var scale = 0.7 + (0.3 * progress);
+            // Use a single circular themed glow so the fill never reads like a square card.
+            var eased = progress * progress * (3.0 - (2.0 * progress));
+            _glow.Opacity = 0.26 + (0.60 * eased);
+            var scale = 0.78 + (0.48 * eased);
             _glow.RenderTransformOrigin = new Point(0.5, 0.5);
             _glow.RenderTransform = new ScaleTransform { ScaleX = scale, ScaleY = scale };
 
-            _track.Opacity = 0.18;
-            _progress.Opacity = 1.0;
-            _progress.Data = progress <= 0.001 ? null : BuildArc(corner, progress, Scaled(ArcRadiusDip));
-            _hintLabel.Opacity = 0.0;
+            _core.Opacity = 0.0;
+            _border.Opacity = 0.0;
+
+            _track.Opacity = 0.0;
+            _progress.Opacity = 0.0;
+            _progress.Data = null;
         }
 
         private Geometry BuildArc(HotCorner corner, double fraction, double radiusDip)
@@ -548,29 +564,6 @@ namespace TopToolbar
             return geometry;
         }
 
-        private void PositionHintLabel(HotCorner corner)
-        {
-            _hintLabel.TextAlignment =
-                corner == HotCorner.TopRight || corner == HotCorner.BottomRight
-                    ? TextAlignment.Right
-                    : TextAlignment.Left;
-
-            var labelWidth = Scaled(HintLabelWidthDip);
-            var labelInset = Scaled(HintLabelInsetDip);
-            _hintLabel.Width = labelWidth;
-
-            var left = corner == HotCorner.TopRight || corner == HotCorner.BottomRight
-                ? _cornerCenterXDip - labelInset - labelWidth
-                : _cornerCenterXDip + labelInset;
-
-            var top = corner == HotCorner.BottomLeft || corner == HotCorner.BottomRight
-                ? _cornerCenterYDip - Scaled(HintLabelBottomOffsetDip)
-                : _cornerCenterYDip + Scaled(HintLabelTopOffsetDip);
-
-            Canvas.SetLeft(_hintLabel, Math.Clamp(left, 0.0, Math.Max(0.0, _surfaceWidthDip - labelWidth)));
-            Canvas.SetTop(_hintLabel, Math.Clamp(top, 0.0, Math.Max(0.0, _surfaceHeightDip - Scaled(HintLabelBottomOffsetDip))));
-        }
-
         private void RefreshBrushes()
         {
             var glowBrush = new RadialGradientBrush
@@ -580,14 +573,18 @@ namespace TopToolbar
                 RadiusX = 0.5,
                 RadiusY = 0.5,
             };
-            glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accent, 0xCC), Offset = 0.0 });
-            glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accent, 0x55), Offset = 0.45 });
+            glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accent, 0xF0), Offset = 0.0 });
+            glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accent, 0xA8), Offset = 0.18 });
+            glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accent, 0x52), Offset = 0.42 });
             glowBrush.GradientStops.Add(new GradientStop { Color = WithAlpha(_accent, 0x00), Offset = 1.0 });
             _glow.Fill = glowBrush;
 
-            _track.Stroke = new SolidColorBrush(WithAlpha(_label, 0xFF));
-            _progress.Stroke = new SolidColorBrush(WithAlpha(_accent, 0xFF));
-            _hintLabel.Foreground = new SolidColorBrush(WithAlpha(_label, 0xCC));
+            _core.Fill = null;
+            _border.Stroke = null;
+            _border.StrokeThickness = 0.0;
+
+            _track.Stroke = new SolidColorBrush(WithAlpha(_accent, 0x00));
+            _progress.Stroke = new SolidColorBrush(WithAlpha(_accent, 0x00));
         }
 
         private static Color WithAlpha(Color color, byte alpha)

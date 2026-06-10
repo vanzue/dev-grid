@@ -232,6 +232,23 @@ public partial class ToolbarButton : INotifyPropertyChanged
     }
 
     [JsonIgnore]
+    private bool _canExecuteWhenDimmed;
+
+    [JsonIgnore]
+    public bool CanExecuteWhenDimmed
+    {
+        get => _canExecuteWhenDimmed;
+        set
+        {
+            if (_canExecuteWhenDimmed != value)
+            {
+                _canExecuteWhenDimmed = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    [JsonIgnore]
         public bool IsExecuting
         {
             get => _isExecuting;
@@ -350,6 +367,34 @@ public partial class ToolbarButton : INotifyPropertyChanged
     [JsonIgnore]
     public Visibility ProgressVisibility => IsExecuting ? Visibility.Visible : Visibility.Collapsed;
 
+    private ActionSurfaces _surfaces = ActionSurfaces.Bar;
+
+    /// <summary>
+    /// Surfaces this action is pinned to (top bar and/or radial ring). Defaults to <see cref="ActionSurfaces.Bar"/>.
+    /// Persistence of user overrides is handled by <c>ActionPinStore</c>; this property is the live,
+    /// observable value the UI binds to.
+    /// </summary>
+    public ActionSurfaces Surfaces
+    {
+        get => _surfaces;
+        set
+        {
+            if (_surfaces != value)
+            {
+                _surfaces = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsPinnedToBar));
+                OnPropertyChanged(nameof(IsPinnedToRing));
+            }
+        }
+    }
+
+    [JsonIgnore]
+    public bool IsPinnedToBar => (Surfaces & ActionSurfaces.Bar) != 0;
+
+    [JsonIgnore]
+    public bool IsPinnedToRing => (Surfaces & ActionSurfaces.Ring) != 0;
+
     private ToolbarAction _action = new();
 
     public ToolbarAction Action
@@ -377,7 +422,9 @@ public partial class ToolbarButton : INotifyPropertyChanged
             IconPath = IconPath,
             IsEnabled = IsEnabled,
             IsIconCustomized = IsIconCustomized,
+            CanExecuteWhenDimmed = CanExecuteWhenDimmed,
             Action = Action?.Clone() ?? new ToolbarAction(),
+            Surfaces = Surfaces,
         };
 
         clone.SortOrder = SortOrder;

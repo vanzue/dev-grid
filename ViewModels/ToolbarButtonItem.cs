@@ -24,7 +24,7 @@ namespace TopToolbar.ViewModels
 
         public ToolbarButton Button { get; }
 
-        public bool IsEnabled => Group.IsEnabled && Button.IsActionEnabled && !Button.IsDimmed;
+        public bool IsEnabled => Group.IsEnabled && Button.IsActionEnabled && (!Button.IsDimmed || Button.CanExecuteWhenDimmed);
 
         public double GroupOpacity
         {
@@ -83,6 +83,7 @@ namespace TopToolbar.ViewModels
 
             if (e.PropertyName == nameof(ToolbarButton.IsEnabled) ||
                 e.PropertyName == nameof(ToolbarButton.IsDimmed) ||
+                e.PropertyName == nameof(ToolbarButton.CanExecuteWhenDimmed) ||
                 e.PropertyName == nameof(ToolbarButton.IsExecuting) ||
                 e.PropertyName == nameof(ToolbarButton.IconOpacity) ||
                 e.PropertyName == nameof(ToolbarButton.ProgressVisibility))

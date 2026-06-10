@@ -87,7 +87,12 @@ namespace TopToolbar
 
         private void UpdateSnapshotButtonState()
         {
-            if (SnapshotButton != null)
+            if (SnapshotButton == null)
+            {
+                return;
+            }
+
+            void Apply()
             {
                 var snapshotEnabled = !_snapshotInProgress;
                 SnapshotButton.IsEnabled = snapshotEnabled;
@@ -96,6 +101,19 @@ namespace TopToolbar
                 {
                     SnapshotLabel.Opacity = snapshotEnabled ? 1d : 0.45d;
                 }
+            }
+
+            // This may be invoked from a continuation that resumed off the UI thread (e.g. after the
+            // snapshot-flight animation, which ends with ConfigureAwait(false)). Marshal to the UI
+            // thread so touching the button does not throw RPC_E_WRONG_THREAD.
+            var dispatcher = DispatcherQueue;
+            if (dispatcher == null || dispatcher.HasThreadAccess)
+            {
+                Apply();
+            }
+            else
+            {
+                dispatcher.TryEnqueue(Apply);
             }
         }
 

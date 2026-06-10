@@ -167,13 +167,18 @@ namespace TopToolbar.ViewModels
                 }
 
                 SubscribeButton(button);
-                if (button.IsEnabled)
+                if (IsBarVisible(button))
                 {
                     Buttons.Add(new ToolbarButtonItem(_group, button));
                 }
             }
 
             OnButtonsChanged();
+        }
+
+        private static bool IsBarVisible(ToolbarButton button)
+        {
+            return button != null && button.IsEnabled && (button.Surfaces & ActionSurfaces.Bar) != 0;
         }
 
         private void OnButtonsCollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
@@ -218,7 +223,7 @@ namespace TopToolbar.ViewModels
                     if (item is ToolbarButton button)
                     {
                         SubscribeButton(button);
-                        if (button.IsEnabled)
+                        if (IsBarVisible(button))
                         {
                             AddButton(button);
                         }
@@ -276,11 +281,13 @@ namespace TopToolbar.ViewModels
 
         private void OnButtonPropertyChanged(object sender, PropertyChangedEventArgs e)
         {
-            if (e == null || e.PropertyName == nameof(ToolbarButton.IsEnabled))
+            if (e == null ||
+                e.PropertyName == nameof(ToolbarButton.IsEnabled) ||
+                e.PropertyName == nameof(ToolbarButton.Surfaces))
             {
                 if (sender is ToolbarButton button)
                 {
-                    if (button.IsEnabled)
+                    if (IsBarVisible(button))
                     {
                         AddButton(button);
                     }
@@ -354,7 +361,7 @@ namespace TopToolbar.ViewModels
                     break;
                 }
 
-                if (candidate != null && candidate.IsEnabled)
+                if (candidate != null && IsBarVisible(candidate))
                 {
                     index++;
                 }

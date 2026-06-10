@@ -198,6 +198,8 @@ namespace TopToolbar
                     return;
                 }
 
+                TopToolbar.Services.ActionPinStore.Instance.Apply(group);
+
                 await RunOnUiThreadAsync(() =>
                 {
                     _store.UpsertProviderGroup(group);

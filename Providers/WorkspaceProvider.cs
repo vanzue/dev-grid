@@ -557,16 +557,19 @@ namespace TopToolbar.Providers
                     continue;
                 }
 
+                var isColdWorkspace = string.Equals(workspace.WorkspaceKind, WorkspaceKinds.Cold, StringComparison.OrdinalIgnoreCase);
                 var button = new ToolbarButton
                 {
                     Id = BuildButtonIdInternal(workspace.Id),
                     Name = workspace.DisplayName,
-                    Description = string.Equals(workspace.WorkspaceKind, WorkspaceKinds.Cold, StringComparison.OrdinalIgnoreCase)
+                    Description = isColdWorkspace
                         ? $"Cold · {workspace.Id}"
                         : $"Hot · {workspace.Id}",
                     IconGlyph = "\uE7F4",
                     IconType = ToolbarIconType.Catalog,
-                    IsDimmed = string.Equals(workspace.WorkspaceKind, WorkspaceKinds.Cold, StringComparison.OrdinalIgnoreCase),
+                    IsDimmed = isColdWorkspace,
+                    CanExecuteWhenDimmed = isColdWorkspace,
+                    Surfaces = ActionSurfaces.Bar | ActionSurfaces.Ring,
                     Action = new ToolbarAction
                     {
                         Type = ToolbarActionType.Provider,
@@ -769,11 +772,7 @@ namespace TopToolbar.Providers
                         .ConfigureAwait(false);
                 }
 
-                var messages = diagnostics?.Ok == true
-                    ? diagnostics.Warnings
-                    : diagnostics?.Errors;
-                var hasMessages = messages != null && messages.Count > 0;
-                var message = hasMessages ? string.Join("; ", messages) : string.Empty;
+                var message = BuildWorkspaceLaunchMessage(workspace, diagnostics);
 
                 return new ActionResult
                 {
@@ -794,6 +793,49 @@ namespace TopToolbar.Providers
                     Message = ex.Message,
                 };
             }
+        }
+
+        private static string BuildWorkspaceLaunchMessage(
+            WorkspaceDefinition workspace,
+            WorkspaceSwitchDiagnostics diagnostics)
+        {
+            if (diagnostics == null)
+            {
+                return string.Empty;
+            }
+
+            var errors = diagnostics.Errors?
+                .Where(message => !string.IsNullOrWhiteSpace(message))
+                .ToList() ?? new List<string>();
+            var warnings = diagnostics.Warnings?
+                .Where(message => !string.IsNullOrWhiteSpace(message))
+                .ToList() ?? new List<string>();
+
+            if (diagnostics.Ok)
+            {
+                // Hot workspace switching is a live-window operation. A missing bound window
+                // can be expected over time, so keep those warnings in logs/diagnostics but
+                // don't surface them as a yellow success state in the main UI. Real errors
+                // (for example focus failures) should still bubble up.
+                if (WorkspaceKinds.IsHot(workspace))
+                {
+                    return errors.Count > 0 ? string.Join("; ", errors) : string.Empty;
+                }
+
+                if (warnings.Count > 0)
+                {
+                    return string.Join("; ", warnings);
+                }
+
+                return errors.Count > 0 ? string.Join("; ", errors) : string.Empty;
+            }
+
+            if (errors.Count > 0)
+            {
+                return string.Join("; ", errors);
+            }
+
+            return warnings.Count > 0 ? string.Join("; ", warnings) : string.Empty;
         }
 
         private async Task<WorkspaceDefinition> CreateHotInstanceFromColdAsync(

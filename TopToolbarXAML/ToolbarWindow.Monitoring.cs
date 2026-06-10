@@ -84,7 +84,7 @@ namespace TopToolbar
                 }
                 else if (_isVisible)
                 {
-                    if (!overToolbar && !inTriggerWindow)
+                    if (!overToolbar && !inTriggerWindow && !_isContextMenuOpen)
                     {
                         HideToolbar();
                     }
