@@ -14,6 +14,7 @@ using TopToolbar.Logging;
 using TopToolbar.Models;
 using TopToolbar.Providers;
 using TopToolbar.Services;
+using TopToolbar.Services.Everything;
 using TopToolbar.ViewModels;
 using WinUIEx;
 using Timer = System.Timers.Timer;
@@ -35,6 +36,7 @@ namespace TopToolbar
         private readonly ToolbarViewModel _vm;
         private readonly NotificationService _notificationService;
         private readonly ToastWindow _toastWindow;
+        private readonly EverythingSearchService _everythingSearchService;
 
         private readonly TopToolbar.Stores.ToolbarStore _store = new();
         public ToolbarItemsViewModel ItemsViewModel { get; }
@@ -52,6 +54,7 @@ namespace TopToolbar
         private IntPtr _oldWndProc;
         private DpiWndProcDelegate _newWndProc;
         private SettingsWindow _settingsWindow;
+        private EverythingSearchWindow _everythingSearchWindow;
         private PropertyChangedEventHandler _settingsViewModelPropertyChangedHandler;
 
         private bool _snapshotInProgress;
@@ -66,6 +69,7 @@ namespace TopToolbar
             _providerService = new ActionProviderService(_providerRuntime);
             _notificationService = new NotificationService(DispatcherQueue);
             _toastWindow = new ToastWindow(_notificationService);
+            _everythingSearchService = new EverythingSearchService();
             InitializeHotCorners();
             _actionExecutor = new ToolbarActionExecutor(
                 _providerService,
@@ -227,6 +231,16 @@ namespace TopToolbar
             {
             }
 
+            try
+            {
+                _everythingSearchWindow?.Dispose();
+                _everythingSearchWindow = null;
+                _everythingSearchService?.Dispose();
+            }
+            catch
+            {
+            }
+
             DisposeHotCorners();
 
             GC.SuppressFinalize(this);
@@ -281,6 +295,12 @@ namespace TopToolbar
 
                 try
                 {
+                    if (IsEverythingSearchAction(item.Button?.Action))
+                    {
+                        OpenEverythingSearchWindow();
+                        return;
+                    }
+
                     await _actionExecutor.ExecuteAsync(item.Group, item.Button, CancellationToken.None)
                         .ConfigureAwait(false);
                 }
@@ -288,6 +308,29 @@ namespace TopToolbar
                 {
                 }
             }
+        }
+
+        private static bool IsEverythingSearchAction(ToolbarAction action)
+        {
+            return action != null &&
+                   action.Type == ToolbarActionType.Provider &&
+                   string.Equals(action.ProviderId, EverythingSearchProvider.ProviderId, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(action.ProviderActionId, EverythingSearchProvider.OpenSearchActionId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void OpenEverythingSearchWindow()
+        {
+            if (_everythingSearchWindow == null)
+            {
+                _everythingSearchWindow = new EverythingSearchWindow(_everythingSearchService);
+                _everythingSearchWindow.Closed += (_, __) =>
+                {
+                    _everythingSearchWindow = null;
+                };
+            }
+
+            _everythingSearchWindow.Activate();
+            _everythingSearchWindow.FocusSearchBox();
         }
 
         private async void OnToolbarButtonRightTapped(object sender, RightTappedRoutedEventArgs e)
