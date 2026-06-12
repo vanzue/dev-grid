@@ -4,10 +4,12 @@
 
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using TopToolbar.Actions;
+using TopToolbar.Logging;
 using TopToolbar.Models;
 using TopToolbar.Services;
 using Windows.Media.Control;
@@ -27,6 +29,15 @@ namespace TopToolbar.Providers
         private const string MediaPauseGlyph = "\uE769";
         private const string MediaPlayGlyph = "\uE768";
         private const string MediaUnavailableGlyph = "\uE711";
+        private const int KeyEventKeyUp = 0x0002;
+        private const int VkLeftWindows = 0x5B;
+        private const int VkD = 0x44;
+        private const int VkTab = 0x09;
+        private const int WmSysCommand = 0x0112;
+        private const int ScScreenSave = 0xF140;
+        private const int ScMonitorPower = 0xF170;
+        private const int MonitorPowerOff = 2;
+        private static readonly IntPtr HwndBroadcast = new(0xFFFF);
 
         private readonly ToolbarConfigService _configService = new();
         private readonly SemaphoreSlim _initGate = new(1, 1);
@@ -61,26 +72,93 @@ namespace TopToolbar.Providers
             [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             var state = await GetStateAsync(cancellationToken).ConfigureAwait(false);
-            if (!state.SystemControlsEnabled || !state.MediaPlayPauseEnabled)
+            if (!state.SystemControlsEnabled)
             {
                 yield break;
             }
 
-            yield return new ActionDescriptor
+            if (state.MediaPlayPauseEnabled)
             {
-                Id = MediaActionId,
+                yield return new ActionDescriptor
+                {
+                    Id = MediaActionId,
+                    ProviderId = Id,
+                    Title = "Media Play/Pause",
+                    Subtitle = GetMediaDescription(state),
+                    Kind = ActionKind.Command,
+                    GroupHint = GroupId,
+                    Order = 0,
+                    Icon = new ActionIcon
+                    {
+                        Type = ActionIconType.Glyph,
+                        Value = GetMediaGlyph(state),
+                    },
+                    CanExecute = state.HasSession,
+                };
+            }
+
+            foreach (var descriptor in CreateSystemActionDescriptors())
+            {
+                yield return descriptor;
+            }
+        }
+
+        private IEnumerable<ActionDescriptor> CreateSystemActionDescriptors()
+        {
+            yield return CreateSystemActionDescriptor(
+                HotCornerActions.ShowDesktop,
+                "Show desktop",
+                "Minimize or restore desktop windows",
+                "\uE80F",
+                10);
+            yield return CreateSystemActionDescriptor(
+                HotCornerActions.TaskView,
+                "Task view",
+                "Open Windows task view",
+                "\uE7C4",
+                11);
+            yield return CreateSystemActionDescriptor(
+                HotCornerActions.LockScreen,
+                "Lock screen",
+                "Lock this PC",
+                "\uE72E",
+                12);
+            yield return CreateSystemActionDescriptor(
+                HotCornerActions.StartScreenSaver,
+                "Start screen saver",
+                "Start the configured screen saver",
+                "\uE708",
+                13);
+            yield return CreateSystemActionDescriptor(
+                HotCornerActions.TurnOffDisplay,
+                "Turn off display",
+                "Turn off the display",
+                "\uE7F4",
+                14);
+        }
+
+        private ActionDescriptor CreateSystemActionDescriptor(
+            string actionId,
+            string title,
+            string subtitle,
+            string glyph,
+            double order)
+        {
+            return new ActionDescriptor
+            {
+                Id = actionId,
                 ProviderId = Id,
-                Title = "Media Play/Pause",
-                Subtitle = GetMediaDescription(state),
+                Title = title,
+                Subtitle = subtitle,
                 Kind = ActionKind.Command,
                 GroupHint = GroupId,
-                Order = 0,
+                Order = order,
                 Icon = new ActionIcon
                 {
                     Type = ActionIconType.Glyph,
-                    Value = GetMediaGlyph(state),
+                    Value = glyph,
                 },
-                CanExecute = state.HasSession,
+                CanExecute = true,
             };
         }
 
@@ -89,27 +167,50 @@ namespace TopToolbar.Providers
             var state = await GetStateAsync(cancellationToken).ConfigureAwait(false);
             var group = CreateBaseGroup();
 
-            if (!state.SystemControlsEnabled || !state.MediaPlayPauseEnabled)
+            if (!state.SystemControlsEnabled)
             {
                 return group;
             }
 
-            group.Buttons.Add(new ToolbarButton
+            if (state.MediaPlayPauseEnabled)
             {
-                Id = MediaButtonId,
-                Name = "Media",
-                Description = GetMediaDescription(state),
-                IconType = ToolbarIconType.Catalog,
-                IconGlyph = GetMediaGlyph(state),
-                IsDimmed = !state.HasSession,
-                IsEnabled = true,
-                Action = new ToolbarAction
+                group.Buttons.Add(new ToolbarButton
                 {
-                    Type = ToolbarActionType.Provider,
-                    ProviderId = Id,
-                    ProviderActionId = MediaActionId,
-                },
-            });
+                    Id = MediaButtonId,
+                    Name = "Media",
+                    Description = GetMediaDescription(state),
+                    IconType = ToolbarIconType.Catalog,
+                    IconGlyph = GetMediaGlyph(state),
+                    IsDimmed = !state.HasSession,
+                    IsEnabled = true,
+                    Action = new ToolbarAction
+                    {
+                        Type = ToolbarActionType.Provider,
+                        ProviderId = Id,
+                        ProviderActionId = MediaActionId,
+                    },
+                });
+            }
+
+            foreach (var descriptor in CreateSystemActionDescriptors())
+            {
+                group.Buttons.Add(new ToolbarButton
+                {
+                    Id = $"system-controls::{descriptor.Id}",
+                    Name = descriptor.Title,
+                    Description = descriptor.Subtitle,
+                    IconType = ToolbarIconType.Catalog,
+                    IconGlyph = descriptor.Icon?.Value ?? "\uE7F4",
+                    IsEnabled = true,
+                    Surfaces = ActionSurfaces.Ring | ActionSurfaces.Corner,
+                    Action = new ToolbarAction
+                    {
+                        Type = ToolbarActionType.Provider,
+                        ProviderId = Id,
+                        ProviderActionId = descriptor.Id,
+                    },
+                });
+            }
 
             return group;
         }
@@ -121,6 +222,36 @@ namespace TopToolbar.Providers
             IProgress<ActionProgress> progress,
             CancellationToken cancellationToken)
         {
+            if (string.Equals(actionId, HotCornerActions.ShowDesktop, StringComparison.OrdinalIgnoreCase))
+            {
+                ShowDesktop();
+                return new ActionResult { Ok = true };
+            }
+
+            if (string.Equals(actionId, HotCornerActions.TaskView, StringComparison.OrdinalIgnoreCase))
+            {
+                ShowTaskView();
+                return new ActionResult { Ok = true };
+            }
+
+            if (string.Equals(actionId, HotCornerActions.LockScreen, StringComparison.OrdinalIgnoreCase))
+            {
+                LockScreen();
+                return new ActionResult { Ok = true };
+            }
+
+            if (string.Equals(actionId, HotCornerActions.StartScreenSaver, StringComparison.OrdinalIgnoreCase))
+            {
+                StartScreenSaver();
+                return new ActionResult { Ok = true };
+            }
+
+            if (string.Equals(actionId, HotCornerActions.TurnOffDisplay, StringComparison.OrdinalIgnoreCase))
+            {
+                TurnOffDisplay();
+                return new ActionResult { Ok = true };
+            }
+
             if (!string.Equals(actionId, MediaActionId, StringComparison.OrdinalIgnoreCase))
             {
                 return new ActionResult
@@ -181,6 +312,57 @@ namespace TopToolbar.Providers
                 };
             }
         }
+
+        private static void ShowDesktop()
+        {
+            AppLogger.LogInfo("SystemControls: show desktop.");
+            SendWindowsShortcut(VkD);
+        }
+
+        private static void ShowTaskView()
+        {
+            AppLogger.LogInfo("SystemControls: task view.");
+            SendWindowsShortcut(VkTab);
+        }
+
+        private static void LockScreen()
+        {
+            AppLogger.LogInfo("SystemControls: lock screen.");
+            if (!LockWorkStation())
+            {
+                var error = Marshal.GetLastWin32Error();
+                AppLogger.LogWarning($"SystemControls: LockWorkStation failed, error={error}.");
+            }
+        }
+
+        private static void StartScreenSaver()
+        {
+            AppLogger.LogInfo("SystemControls: start screen saver.");
+            PostMessage(HwndBroadcast, WmSysCommand, new IntPtr(ScScreenSave), IntPtr.Zero);
+        }
+
+        private static void TurnOffDisplay()
+        {
+            AppLogger.LogInfo("SystemControls: turn off display.");
+            PostMessage(HwndBroadcast, WmSysCommand, new IntPtr(ScMonitorPower), new IntPtr(MonitorPowerOff));
+        }
+
+        private static void SendWindowsShortcut(int virtualKey)
+        {
+            keybd_event((byte)VkLeftWindows, 0, 0, UIntPtr.Zero);
+            keybd_event((byte)virtualKey, 0, 0, UIntPtr.Zero);
+            keybd_event((byte)virtualKey, 0, KeyEventKeyUp, UIntPtr.Zero);
+            keybd_event((byte)VkLeftWindows, 0, KeyEventKeyUp, UIntPtr.Zero);
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool LockWorkStation();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern void keybd_event(byte bVk, byte bScan, int dwFlags, UIntPtr dwExtraInfo);
 
         private async Task<SystemControlsState> GetStateAsync(CancellationToken cancellationToken)
         {

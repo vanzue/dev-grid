@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -11,6 +12,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using TopToolbar.Logging;
 using TopToolbar.Models;
+using TopToolbar.Providers;
 using TopToolbar.Services.Display;
 using TopToolbar.Services.HotCorners;
 using TopToolbar.ViewModels;
@@ -173,6 +175,25 @@ namespace TopToolbar
 
         private void OnHotCornerActionTriggered(HotCornerActionContext context)
         {
+            if (IsProviderAction(context.ActionId, ScreenshotProvider.ProviderId, ScreenshotProvider.CaptureActionId) ||
+                string.Equals(context.ActionId, ScreenshotProvider.CaptureActionId, StringComparison.OrdinalIgnoreCase))
+            {
+                _ = LaunchScreenshotCaptureAsync();
+                return;
+            }
+
+            if (IsProviderAction(context.ActionId, WorkspaceProviderId, WorkspaceProvider.SnapshotActionId))
+            {
+                _ = _hotCornerRouter.ExecuteAsync(HotCornerActions.Snapshot);
+                return;
+            }
+
+            if (TryParseProviderActionKey(context.ActionId, out var providerId, out var providerActionId))
+            {
+                _ = ExecuteHotCornerProviderActionAsync(providerId, providerActionId);
+                return;
+            }
+
             // Runs on the UI dispatcher (poll timer). Capture the screen now, before the snapshot runs,
             // so the "photo" reflects exactly what the user saw at the moment of triggering.
             try
@@ -201,6 +222,35 @@ namespace TopToolbar
             }
 
             _ = _hotCornerRouter.ExecuteAsync(context.ActionId);
+        }
+
+        private async Task ExecuteHotCornerProviderActionAsync(string providerId, string actionId)
+        {
+            try
+            {
+                var button = new ToolbarButton
+                {
+                    Id = $"hot-corner::{providerId}/{actionId}",
+                    Name = GetHotCornerActionLabel(TopToolbar.Services.ActionPinStore.GetProviderActionKey(providerId, actionId)),
+                    IsEnabled = true,
+                    Action = new ToolbarAction
+                    {
+                        Type = ToolbarActionType.Provider,
+                        ProviderId = providerId,
+                        ProviderActionId = actionId,
+                    },
+                };
+                var group = new ButtonGroup
+                {
+                    Id = "hot-corners",
+                    Name = "Hot corners",
+                };
+                await _actionExecutor.ExecuteAsync(group, button, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"HotCorner: provider action '{providerId}/{actionId}' failed - {ex.Message}");
+            }
         }
 
         private async Task OnHotCornerSnapshotCompletedAsync(string workspaceId, string workspaceName)
@@ -487,9 +537,27 @@ namespace TopToolbar
 
         private static string GetHotCornerActionLabel(string actionId)
         {
+            if (TryParseProviderActionKey(actionId, out var providerId, out var providerActionId))
+            {
+                if (string.Equals(providerId, ScreenshotProvider.ProviderId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(providerActionId, ScreenshotProvider.CaptureActionId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return "Screenshot";
+                }
+
+                if (string.Equals(providerId, WorkspaceProviderId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(providerActionId, WorkspaceProvider.SnapshotActionId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return "Snap workspace";
+                }
+
+                return providerActionId;
+            }
+
             return actionId switch
             {
                 HotCornerActions.Snapshot => "Snap workspace",
+                ScreenshotProvider.CaptureActionId => "Screenshot",
                 HotCornerActions.ShowDesktop => "Show desktop",
                 HotCornerActions.TaskView => "Task view",
                 HotCornerActions.LockScreen => "Lock screen",
@@ -497,6 +565,40 @@ namespace TopToolbar
                 HotCornerActions.TurnOffDisplay => "Display off",
                 _ => "Hot corner",
             };
+        }
+
+        private static bool IsProviderAction(string actionId, string providerId, string providerActionId)
+        {
+            return TryParseProviderActionKey(actionId, out var parsedProviderId, out var parsedActionId) &&
+                string.Equals(parsedProviderId, providerId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(parsedActionId, providerActionId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryParseProviderActionKey(string actionId, out string providerId, out string providerActionId)
+        {
+            providerId = string.Empty;
+            providerActionId = string.Empty;
+            if (string.IsNullOrWhiteSpace(actionId))
+            {
+                return false;
+            }
+
+            const string prefix = "provider:";
+            if (!actionId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var payload = actionId.Substring(prefix.Length);
+            var separator = payload.IndexOf('/');
+            if (separator <= 0 || separator >= payload.Length - 1)
+            {
+                return false;
+            }
+
+            providerId = payload.Substring(0, separator).Trim();
+            providerActionId = payload.Substring(separator + 1).Trim();
+            return !string.IsNullOrWhiteSpace(providerId) && !string.IsNullOrWhiteSpace(providerActionId);
         }
 
         private void ClearCornerHints()

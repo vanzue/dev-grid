@@ -229,7 +229,7 @@
                                                             Tag="{x:Bind}"
                                                             Click="OnToolbarButtonClick"
                                                             RightTapped="OnToolbarButtonRightTapped"
-                                                            ToolTipService.ToolTip="{x:Bind Button.ToolTipText, Mode=OneWay}">
+                                                            PointerEntered="OnToolbarButtonPointerEntered">
                                                             <Grid
                                                                 Width="{x:Bind local:ToolbarMetrics.ToolbarButtonSize}"
                                                                 Height="{x:Bind local:ToolbarMetrics.ToolbarButtonSize}">

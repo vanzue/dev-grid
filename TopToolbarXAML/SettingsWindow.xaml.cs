@@ -30,7 +30,9 @@ namespace TopToolbar
             InitializeComponent();
 
             _providerRuntime = providerRuntime;
-            _vm = new SettingsViewModel(new ToolbarConfigService());
+            _vm = new SettingsViewModel(
+                new ToolbarConfigService(),
+                providerRuntime == null ? null : new ActionProviderService(providerRuntime));
             InitializeWindowStyling();
             LayoutRoot.DataContext = _vm;
             this.Closed += async (s, e) =>

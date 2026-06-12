@@ -34,6 +34,7 @@ namespace TopToolbar.Providers
 
             LoadWorkspaceProvider();
             LoadScreenshotProvider();
+            LoadSystemControlsProvider();
         }
 
         /// <summary>
@@ -106,6 +107,26 @@ namespace TopToolbar.Providers
                 catch
                 {
                     // Ignore logging errors
+                }
+            }
+        }
+
+        private void LoadSystemControlsProvider()
+        {
+            try
+            {
+                var provider = new SystemControlsProvider();
+                _providers.Add(provider);
+                _disposables.Add(provider);
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    AppLogger.LogWarning($"BuiltinProvider: Failed to load system controls provider: {ex.Message}");
+                }
+                catch
+                {
                 }
             }
         }

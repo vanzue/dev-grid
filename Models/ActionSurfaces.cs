@@ -7,8 +7,8 @@ using System;
 namespace TopToolbar.Models
 {
     /// <summary>
-    /// Surfaces an action (toolbar button) can be pinned to. Actions are unified across the
-    /// top bar and the radial ring; this flag controls where a given action is shown.
+    /// Surfaces an action can be pinned or assigned to. Actions are unified across the top bar,
+    /// radial ring, and hot corners; this flag controls where a given action is shown by default.
     /// </summary>
     [Flags]
     public enum ActionSurfaces
@@ -16,5 +16,6 @@ namespace TopToolbar.Models
         None = 0,
         Bar = 1,
         Ring = 2,
+        Corner = 4,
     }
 }

@@ -43,6 +43,16 @@ namespace TopToolbar.Services.Workspaces
                 return AppWindowResult.Failed;
             }
 
+            if (!string.IsNullOrWhiteSpace(app.LaunchUri))
+            {
+                return await LaunchUriAsync(
+                    app,
+                    windowManager,
+                    windowWaitTimeout,
+                    windowPollInterval,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
             // If command-line arguments are specified and we have a path, prefer Path launch
             // because AUMID/PackageFullName activation APIs don't support passing arguments.
             var hasCommandLineArgs = !string.IsNullOrWhiteSpace(app.CommandLineArguments);
@@ -103,6 +113,48 @@ namespace TopToolbar.Services.Workspaces
             }
 
             return AppWindowResult.Failed;
+        }
+
+        private static async Task<AppWindowResult> LaunchUriAsync(
+            ApplicationDefinition app,
+            WindowManager windowManager,
+            TimeSpan windowWaitTimeout,
+            TimeSpan windowPollInterval,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var launchUri = app.LaunchUri?.Trim();
+                if (string.IsNullOrWhiteSpace(launchUri))
+                {
+                    return AppWindowResult.Failed;
+                }
+
+                AppLogger.LogInfo($"WorkspaceRuntime: launching URI for '{DescribeApp(app)}'.");
+                using var process = Process.Start(new ProcessStartInfo
+                {
+                    FileName = launchUri,
+                    UseShellExecute = true,
+                });
+
+                var windows = await WaitForAppWindowsAsync(
+                    app,
+                    windowManager,
+                    windowWaitTimeout,
+                    windowPollInterval,
+                    Array.Empty<IntPtr>(),
+                    cancellationToken)
+                    .ConfigureAwait(false);
+
+                return windows.Count > 0
+                    ? new AppWindowResult(true, true, windows)
+                    : AppWindowResult.Failed;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"WorkspaceRuntime: URI launch failed for '{DescribeApp(app)}' - {ex.Message}");
+                return AppWindowResult.Failed;
+            }
         }
 
         private static async Task<IReadOnlyList<WindowInfo>> WaitForAppWindowsAsync(

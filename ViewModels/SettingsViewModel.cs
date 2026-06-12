@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Dispatching;
+using TopToolbar.Actions;
 using TopToolbar.Logging;
 using TopToolbar.Models;
 using TopToolbar.Services;
@@ -18,13 +19,15 @@ namespace TopToolbar.ViewModels
     public partial class SettingsViewModel : ObservableObject, IDisposable
     {
         private readonly ToolbarConfigService _service;
+        private readonly ActionProviderService _actionProviderService;
         private readonly Timer _saveDebounce = new(300) { AutoReset = false };
         private DispatcherQueue _dispatcher;
         private bool _suppressGeneralSave;
 
-        public SettingsViewModel(ToolbarConfigService service)
+        public SettingsViewModel(ToolbarConfigService service, ActionProviderService actionProviderService = null)
         {
             _service = service;
+            _actionProviderService = actionProviderService;
             _workspaceDefinitionStore = new WorkspaceDefinitionStore(null, _workspaceConfigStore);
             _saveDebounce.Elapsed += async (s, e) =>
             {
@@ -41,6 +44,7 @@ namespace TopToolbar.ViewModels
             var toolbarConfig = await _service.LoadAsync();
             var workspaceConfig = await _workspaceConfigStore.LoadAsync();
             var workspaceDefinitions = await _workspaceDefinitionStore.LoadAllAsync(CancellationToken.None);
+            var hotCornerActionOptions = await BuildHotCornerActionOptionsAsync(CancellationToken.None).ConfigureAwait(false);
 
             void Apply()
             {
@@ -55,6 +59,7 @@ namespace TopToolbar.ViewModels
                     Theme = toolbarConfig.Theme;
                     SystemControlsEnabled = toolbarConfig.DefaultActions.SystemControlsEnabled;
                     MediaPlayPauseEnabled = toolbarConfig.DefaultActions.MediaPlayPause.Enabled;
+                    ReplaceHotCornerActionOptions(hotCornerActionOptions);
                     LoadHotCorners(toolbarConfig.HotCorners);
 
                     Groups.Clear();

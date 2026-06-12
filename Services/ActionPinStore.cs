@@ -52,6 +52,16 @@ namespace TopToolbar.Services
             return $"button:{button.Id}";
         }
 
+        public static string GetProviderActionKey(string providerId, string actionId)
+        {
+            if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(actionId))
+            {
+                return string.Empty;
+            }
+
+            return $"provider:{providerId.Trim()}/{actionId.Trim()}";
+        }
+
         public ActionSurfaces? Get(string key)
         {
             if (string.IsNullOrWhiteSpace(key))

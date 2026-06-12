@@ -23,6 +23,7 @@ namespace TopToolbar.Providers
     public sealed class WorkspaceProvider : IActionProvider, IToolbarGroupProvider, IDisposable, IChangeNotifyingActionProvider
     {
         private const string WorkspacePrefix = "workspace.launch:";
+        public const string SnapshotActionId = "workspace.snapshot";
         private readonly WorkspaceProviderConfigStore _configStore;
         private readonly WorkspaceDefinitionStore _definitionStore;
         private readonly WorkspaceButtonStore _buttonStore;
@@ -498,6 +499,19 @@ namespace TopToolbar.Providers
 
         public async IAsyncEnumerable<ActionDescriptor> DiscoverAsync(ActionContext context, [EnumeratorCancellation] CancellationToken cancellationToken)
         {
+            yield return new ActionDescriptor
+            {
+                Id = SnapshotActionId,
+                ProviderId = Id,
+                Title = "Snap workspace",
+                Subtitle = "Capture current desktop as a live workspace",
+                Kind = ActionKind.Command,
+                GroupHint = "workspaces",
+                Order = -100,
+                Icon = new ActionIcon { Type = ActionIconType.Glyph, Value = "\uE722" },
+                CanExecute = true,
+            };
+
             var workspaces = await GetWorkspacesAsync(cancellationToken).ConfigureAwait(false);
             var order = 0d;
             foreach (var workspace in workspaces)
@@ -708,6 +722,11 @@ namespace TopToolbar.Providers
         {
             if (string.IsNullOrWhiteSpace(actionId) || !actionId.StartsWith(WorkspacePrefix, StringComparison.OrdinalIgnoreCase))
             {
+                if (string.Equals(actionId, SnapshotActionId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return await RunSnapshotActionAsync(cancellationToken).ConfigureAwait(false);
+                }
+
                 return new ActionResult
                 {
                     Ok = false,
@@ -741,6 +760,26 @@ namespace TopToolbar.Providers
                     Message = ex.Message,
                 };
             }
+        }
+
+        private async Task<ActionResult> RunSnapshotActionAsync(CancellationToken cancellationToken)
+        {
+            var name = await WorkspaceNameSuggester.GetNextWorkspaceNameAsync(cancellationToken).ConfigureAwait(false);
+            var workspace = await SnapshotAsync(name, cancellationToken).ConfigureAwait(false);
+            if (workspace == null)
+            {
+                return new ActionResult
+                {
+                    Ok = false,
+                    Message = "Snapshot failed: no eligible windows detected.",
+                };
+            }
+
+            return new ActionResult
+            {
+                Ok = true,
+                Message = $"Workspace '{workspace.Name}' captured.",
+            };
         }
 
         private async Task<ActionResult> RunLauncherAsync(string workspaceId, CancellationToken cancellationToken)
@@ -1183,6 +1222,11 @@ namespace TopToolbar.Providers
                         AppUserModelId = app?.AppUserModelId ?? string.Empty,
                         PwaAppId = app?.PwaAppId ?? string.Empty,
                         CommandLineArguments = app?.CommandLineArguments ?? string.Empty,
+                        LaunchUri = app?.LaunchUri ?? string.Empty,
+                        RemoteProvider = app?.RemoteProvider ?? string.Empty,
+                        RemoteConnectionId = app?.RemoteConnectionId ?? string.Empty,
+                        RemoteResourceId = app?.RemoteResourceId ?? string.Empty,
+                        RemoteUserName = app?.RemoteUserName ?? string.Empty,
                         WorkingDirectory = app?.WorkingDirectory ?? string.Empty,
                         IsElevated = app?.IsElevated ?? false,
                         CanLaunchElevated = app?.CanLaunchElevated ?? false,
