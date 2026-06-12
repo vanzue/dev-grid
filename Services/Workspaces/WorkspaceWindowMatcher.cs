@@ -18,6 +18,7 @@ namespace TopToolbar.Services.Workspaces
         private const int ScorePwaIdentity = 850;
         private const int ScorePackageIdentity = 900;
         private const int ScoreAppUserModelId = 1000;
+        private const int ScoreRemoteResource = 1100;
         private const int ScoreTitleBonusForStrongIdentity = 20;
 
         public static bool IsMatch(WindowInfo window, ApplicationDefinition app)
@@ -33,6 +34,11 @@ namespace TopToolbar.Services.Workspaces
             }
 
             var score = ScoreNoMatch;
+
+            if (MatchesRemoteResource(window, app))
+            {
+                score = Math.Max(score, ScoreRemoteResource);
+            }
 
             if (MatchesAppUserModelId(window, app))
             {
@@ -117,6 +123,35 @@ namespace TopToolbar.Services.Workspaces
                     window.AppUserModelId,
                     app.AppUserModelId,
                     StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool MatchesRemoteResource(WindowInfo window, ApplicationDefinition app)
+        {
+            if (string.IsNullOrWhiteSpace(app.RemoteConnectionId))
+            {
+                return false;
+            }
+
+            return !string.IsNullOrWhiteSpace(window.AppUserModelId)
+                && window.AppUserModelId.Contains("!Windows365:", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(
+                    ExtractWindowsAppCloudPcId(window.AppUserModelId),
+                    app.RemoteConnectionId.Trim(),
+                    StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ExtractWindowsAppCloudPcId(string appUserModelId)
+        {
+            if (string.IsNullOrWhiteSpace(appUserModelId))
+            {
+                return string.Empty;
+            }
+
+            const string marker = "!Windows365:";
+            var index = appUserModelId.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            return index < 0
+                ? string.Empty
+                : appUserModelId.Substring(index + marker.Length).Trim();
         }
 
         private static bool MatchesPackageIdentity(WindowInfo window, ApplicationDefinition app)

@@ -145,6 +145,51 @@ namespace TopToolbar.Services.Workspaces
             set => SetProperty(ref _commandLineArguments, value ?? string.Empty);
         }
 
+        private string _launchUri = string.Empty;
+
+        [JsonPropertyName("launch-uri")]
+        public string LaunchUri
+        {
+            get => _launchUri;
+            set => SetProperty(ref _launchUri, value ?? string.Empty);
+        }
+
+        private string _remoteProvider = string.Empty;
+
+        [JsonPropertyName("remote-provider")]
+        public string RemoteProvider
+        {
+            get => _remoteProvider;
+            set => SetProperty(ref _remoteProvider, value ?? string.Empty);
+        }
+
+        private string _remoteConnectionId = string.Empty;
+
+        [JsonPropertyName("remote-connection-id")]
+        public string RemoteConnectionId
+        {
+            get => _remoteConnectionId;
+            set => SetProperty(ref _remoteConnectionId, value ?? string.Empty);
+        }
+
+        private string _remoteResourceId = string.Empty;
+
+        [JsonPropertyName("remote-resource-id")]
+        public string RemoteResourceId
+        {
+            get => _remoteResourceId;
+            set => SetProperty(ref _remoteResourceId, value ?? string.Empty);
+        }
+
+        private string _remoteUserName = string.Empty;
+
+        [JsonPropertyName("remote-user-name")]
+        public string RemoteUserName
+        {
+            get => _remoteUserName;
+            set => SetProperty(ref _remoteUserName, value ?? string.Empty);
+        }
+
         private string _workingDirectory = string.Empty;
 
         [JsonPropertyName("working-directory")]
