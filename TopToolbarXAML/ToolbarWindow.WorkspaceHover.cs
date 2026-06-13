@@ -4,7 +4,10 @@
 
 using System;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
+using Microsoft.UI.Windowing;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -13,7 +16,9 @@ using Microsoft.UI.Xaml.Shapes;
 using TopToolbar.Logging;
 using TopToolbar.Services.Workspaces;
 using TopToolbar.ViewModels;
+using Windows.Graphics;
 using Windows.UI;
+using WinUIEx;
 
 namespace TopToolbar
 {
@@ -21,8 +26,11 @@ namespace TopToolbar
     {
         private readonly WorkspaceDefinitionStore _workspaceHoverDefinitionStore =
             new(null, new TopToolbar.Services.Providers.WorkspaceProviderConfigStore());
-        private Flyout _workspaceHoverFlyout;
+        private WindowEx _workspaceHoverWindow;
+        private Grid _workspaceHoverWindowRoot;
+        private DispatcherQueueTimer _workspaceHoverDismissTimer;
         private string _workspaceHoverWorkspaceId = string.Empty;
+        private string _workspaceHoverAppId = string.Empty;
         private WorkspaceItemOverlayWindow _workspaceItemOverlay;
 
         private async void OnToolbarButtonPointerEntered(object sender, PointerRoutedEventArgs e)
@@ -35,7 +43,7 @@ namespace TopToolbar
             }
 
             if (string.Equals(_workspaceHoverWorkspaceId, workspaceId, StringComparison.OrdinalIgnoreCase) &&
-                _workspaceHoverFlyout?.IsOpen == true)
+                _workspaceHoverWindow != null)
             {
                 return;
             }
@@ -61,14 +69,14 @@ namespace TopToolbar
 
         private void ShowWorkspaceItemsFlyout(FrameworkElement target, WorkspaceDefinition workspace)
         {
-            _workspaceHoverFlyout?.Hide();
+            CloseWorkspaceHoverWindow();
             HideWorkspaceItemOverlay();
 
             _workspaceHoverWorkspaceId = workspace.Id ?? string.Empty;
             var panel = new StackPanel
             {
                 Spacing = 8,
-                Width = 440,
+                Width = 500,
                 Padding = new Thickness(14),
             };
 
@@ -102,7 +110,7 @@ namespace TopToolbar
             var scroller = new ScrollViewer
             {
                 Content = list,
-                MaxHeight = 360,
+                MaxHeight = 420,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             };
@@ -118,19 +126,224 @@ namespace TopToolbar
                 Child = panel,
             };
 
-            _workspaceHoverFlyout = new Flyout
+            _workspaceHoverWindow = new WindowEx
             {
-                Content = border,
-                Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft,
+                Title = string.Empty,
+                IsTitleBarVisible = false,
+                ExtendsContentIntoTitleBar = true,
             };
-            _workspaceHoverFlyout.Opened += (_, _) => _isContextMenuOpen = true;
-            _workspaceHoverFlyout.Closed += (_, _) =>
+            _workspaceHoverWindow.SystemBackdrop = new TransparentTintBackdrop(Color.FromArgb(0, 0, 0, 0));
+            _workspaceHoverWindowRoot = new Grid
+            {
+                Background = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0)),
+            };
+            _workspaceHoverWindowRoot.Children.Add(border);
+            _workspaceHoverWindowRoot.PointerEntered += (_, _) => StopWorkspaceHoverDismissTimer();
+            _workspaceHoverWindowRoot.PointerExited += (_, _) => StartWorkspaceHoverDismissTimer();
+            _workspaceHoverWindow.Content = _workspaceHoverWindowRoot;
+            _workspaceHoverWindow.Activated += (_, args) =>
+            {
+                if (args.WindowActivationState == WindowActivationState.Deactivated)
+                {
+                    StartWorkspaceHoverDismissTimer();
+                }
+                else
+                {
+                    StopWorkspaceHoverDismissTimer();
+                }
+            };
+            _workspaceHoverWindow.Closed += (_, _) =>
             {
                 _isContextMenuOpen = false;
                 _workspaceHoverWorkspaceId = string.Empty;
+                _workspaceHoverAppId = string.Empty;
                 HideWorkspaceItemOverlay();
+                _workspaceHoverWindow = null;
+                _workspaceHoverWindowRoot = null;
             };
-            _workspaceHoverFlyout.ShowAt(target);
+
+            _workspaceHoverWindow.Activate();
+            ConfigureWorkspaceHoverWindow(target);
+            _isContextMenuOpen = true;
+        }
+
+        private void ConfigureWorkspaceHoverWindow(FrameworkElement target)
+        {
+            var appWindow = _workspaceHoverWindow?.AppWindow;
+            if (appWindow == null)
+            {
+                return;
+            }
+
+            appWindow.IsShownInSwitchers = false;
+            appWindow.SetIcon(null);
+            if (appWindow.Presenter is OverlappedPresenter presenter)
+            {
+                presenter.IsResizable = false;
+                presenter.IsMinimizable = false;
+                presenter.IsMaximizable = false;
+                presenter.SetBorderAndTitleBar(false, false);
+            }
+
+            const int width = 532;
+            const int height = 500;
+            appWindow.Resize(new SizeInt32(width, height));
+            ApplyWorkspaceHoverWindowStyles();
+
+            var toolbarPos = AppWindow?.Position ?? new PointInt32(0, 0);
+            var toolbarSize = AppWindow?.Size ?? new SizeInt32(width, 120);
+            var x = toolbarPos.X + 24;
+            var y = toolbarPos.Y + Math.Max(toolbarSize.Height - 36, 0);
+            try
+            {
+                if (target?.XamlRoot != null)
+                {
+                    var transform = target.TransformToVisual(RootGrid);
+                    var point = transform.TransformPoint(new Windows.Foundation.Point(0, 0));
+                    var scale = target.XamlRoot.RasterizationScale <= 0 ? 1d : target.XamlRoot.RasterizationScale;
+                    x = toolbarPos.X + (int)Math.Round(point.X * scale) - 24;
+                }
+            }
+            catch
+            {
+            }
+
+            appWindow.Move(new PointInt32(x, y));
+        }
+
+        private void ApplyWorkspaceHoverWindowStyles()
+        {
+            var hwnd = _workspaceHoverWindow?.GetWindowHandle() ?? IntPtr.Zero;
+            if (hwnd == IntPtr.Zero)
+            {
+                return;
+            }
+
+            try
+            {
+                const int gwlStyle = -16;
+                const int gwlExStyle = -20;
+                const int wsCaption = 0x00C00000;
+                const int wsThickFrame = 0x00040000;
+                const int wsMinimizeBox = 0x00020000;
+                const int wsMaximizeBox = 0x00010000;
+                const int wsSysMenu = 0x00080000;
+                const int wsPopup = unchecked((int)0x80000000);
+                const int wsVisible = 0x10000000;
+                const int wsExToolWindow = 0x00000080;
+                const int wsExTopmost = 0x00000008;
+                const int swpNoMove = 0x0002;
+                const int swpNoSize = 0x0001;
+                const int swpNoActivate = 0x0010;
+                const int swpShowWindow = 0x0040;
+                const int swpFrameChanged = 0x0020;
+
+                var style = GetWindowLong(hwnd, gwlStyle);
+                style &= ~(wsCaption | wsThickFrame | wsMinimizeBox | wsMaximizeBox | wsSysMenu);
+                style |= wsPopup | wsVisible;
+                _ = SetWindowLong(hwnd, gwlStyle, style);
+
+                var exStyle = GetWindowLong(hwnd, gwlExStyle);
+                exStyle |= wsExToolWindow | wsExTopmost;
+                _ = SetWindowLong(hwnd, gwlExStyle, exStyle);
+
+                _ = SetWindowPos(
+                    hwnd,
+                    new IntPtr(-1),
+                    0,
+                    0,
+                    0,
+                    0,
+                    (uint)(swpNoMove | swpNoSize | swpNoActivate | swpShowWindow | swpFrameChanged));
+
+                const int dwmwaBorderColor = 34;
+                uint dwmColorNone = 0xFFFFFFFE;
+                _ = DwmSetWindowAttribute(hwnd, dwmwaBorderColor, ref dwmColorNone, sizeof(uint));
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"WorkspaceHover: failed to apply popup window styles - {ex.Message}");
+            }
+        }
+
+        private void CloseWorkspaceHoverWindow()
+        {
+            StopWorkspaceHoverDismissTimer();
+            try
+            {
+                _workspaceHoverWindow?.Close();
+            }
+            catch
+            {
+            }
+
+            _workspaceHoverWindow = null;
+            _workspaceHoverWindowRoot = null;
+            _workspaceHoverWorkspaceId = string.Empty;
+            _workspaceHoverAppId = string.Empty;
+        }
+
+        private void StartWorkspaceHoverDismissTimer()
+        {
+            if (DispatcherQueue == null)
+            {
+                CloseWorkspaceHoverWindow();
+                return;
+            }
+
+            _workspaceHoverDismissTimer ??= DispatcherQueue.CreateTimer();
+            _workspaceHoverDismissTimer.Stop();
+            _workspaceHoverDismissTimer.Interval = TimeSpan.FromMilliseconds(260);
+            _workspaceHoverDismissTimer.IsRepeating = false;
+            _workspaceHoverDismissTimer.Tick -= OnWorkspaceHoverDismissTimerTick;
+            _workspaceHoverDismissTimer.Tick += OnWorkspaceHoverDismissTimerTick;
+            _workspaceHoverDismissTimer.Start();
+        }
+
+        private void StopWorkspaceHoverDismissTimer()
+        {
+            try
+            {
+                _workspaceHoverDismissTimer?.Stop();
+            }
+            catch
+            {
+            }
+        }
+
+        private void OnWorkspaceHoverDismissTimerTick(DispatcherQueueTimer sender, object args)
+        {
+            sender.Stop();
+            if (IsCursorInsideWorkspaceHoverWindow())
+            {
+                return;
+            }
+
+            CloseWorkspaceHoverWindow();
+        }
+
+        private bool IsCursorInsideWorkspaceHoverWindow()
+        {
+            try
+            {
+                var appWindow = _workspaceHoverWindow?.AppWindow;
+                if (appWindow == null)
+                {
+                    return false;
+                }
+
+                GetCursorPos(out var point);
+                var position = appWindow.Position;
+                var size = appWindow.Size;
+                return point.X >= position.X &&
+                    point.X <= position.X + size.Width &&
+                    point.Y >= position.Y &&
+                    point.Y <= position.Y + size.Height;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private FrameworkElement CreateWorkspaceAppRow(WorkspaceDefinition workspace, ApplicationDefinition app)
@@ -195,6 +408,12 @@ namespace TopToolbar
 
             row.PointerEntered += (_, _) =>
             {
+                if (string.Equals(_workspaceHoverAppId, app.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                _workspaceHoverAppId = app.Id ?? string.Empty;
                 row.Background = TryGetBrush("SystemControlHighlightListLowBrush", Color.FromArgb(0x28, 0xFF, 0xFF, 0xFF));
                 deleteButton.Opacity = 1;
                 ShowWorkspaceItemOverlay(app);
@@ -203,14 +422,49 @@ namespace TopToolbar
             {
                 row.Background = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0));
                 deleteButton.Opacity = 0;
+                if (string.Equals(_workspaceHoverAppId, app.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    _workspaceHoverAppId = string.Empty;
+                }
+
                 HideWorkspaceItemOverlay();
             };
             deleteButton.Click += async (_, _) =>
             {
                 await RemoveWorkspaceAppAsync(workspace.Id, app.Id).ConfigureAwait(true);
             };
+            row.RightTapped += (_, e) =>
+            {
+                e.Handled = true;
+                ShowWorkspaceAppContextMenu(row, workspace, app, e.GetPosition(row));
+            };
 
             return row;
+        }
+
+        private void ShowWorkspaceAppContextMenu(
+            FrameworkElement target,
+            WorkspaceDefinition workspace,
+            ApplicationDefinition app,
+            Windows.Foundation.Point position)
+        {
+            if (target == null || workspace == null || app == null)
+            {
+                return;
+            }
+
+            var menu = new MenuFlyout();
+            var removeItem = new MenuFlyoutItem
+            {
+                Text = "Remove",
+            };
+            removeItem.Click += async (_, _) =>
+            {
+                await RemoveWorkspaceAppAsync(workspace.Id, app.Id).ConfigureAwait(true);
+            };
+            menu.Items.Add(removeItem);
+            WireContextMenuAutoHide(menu);
+            menu.ShowAt(target, position);
         }
 
         private Button CreateDeleteButton()
@@ -273,6 +527,11 @@ namespace TopToolbar
         private void ShowWorkspaceItemOverlay(ApplicationDefinition app)
         {
             var position = app?.Position;
+            if (string.IsNullOrWhiteSpace(_workspaceHoverAppId))
+            {
+                _workspaceHoverAppId = app?.Id ?? string.Empty;
+            }
+
             if (position == null || position.IsEmpty)
             {
                 HideWorkspaceItemOverlay();
@@ -320,7 +579,7 @@ namespace TopToolbar
                     .ConfigureAwait(false);
                 await RunOnUiThreadAsync(() =>
                 {
-                    _workspaceHoverFlyout?.Hide();
+                    CloseWorkspaceHoverWindow();
                     HideWorkspaceItemOverlay();
                     _notificationService.ShowSuccess("Removed workspace item.");
                 }).ConfigureAwait(false);
@@ -350,5 +609,8 @@ namespace TopToolbar
 
             return new SolidColorBrush(fallback);
         }
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref uint pvAttribute, int cbAttribute);
     }
 }
