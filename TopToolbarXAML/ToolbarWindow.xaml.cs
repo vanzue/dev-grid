@@ -322,15 +322,14 @@ namespace TopToolbar
         {
             if (_everythingSearchWindow == null)
             {
-                _everythingSearchWindow = new EverythingSearchWindow(_everythingSearchService);
+                _everythingSearchWindow = new EverythingSearchWindow(_everythingSearchService, RootGrid?.Resources);
                 _everythingSearchWindow.Closed += (_, __) =>
                 {
                     _everythingSearchWindow = null;
                 };
             }
 
-            _everythingSearchWindow.Activate();
-            _everythingSearchWindow.FocusSearchBox();
+            _everythingSearchWindow.ShowAndFocus();
         }
 
         private async void OnToolbarButtonRightTapped(object sender, RightTappedRoutedEventArgs e)
