@@ -15,6 +15,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using TopToolbar.Logging;
 using TopToolbar.Services.Workspaces;
+using TopToolbar.Services.Windowing;
 using TopToolbar.ViewModels;
 using Windows.Graphics;
 using Windows.UI;
@@ -29,6 +30,7 @@ namespace TopToolbar
         private WindowEx _workspaceHoverWindow;
         private Grid _workspaceHoverWindowRoot;
         private DispatcherQueueTimer _workspaceHoverDismissTimer;
+        private readonly ManagedWindowRegistry _workspaceHoverWindows = WindowClaimer.Instance.Registry;
         private string _workspaceHoverWorkspaceId = string.Empty;
         private string _workspaceHoverAppId = string.Empty;
         private WorkspaceItemOverlayWindow _workspaceItemOverlay;
@@ -75,24 +77,24 @@ namespace TopToolbar
             _workspaceHoverWorkspaceId = workspace.Id ?? string.Empty;
             var panel = new StackPanel
             {
-                Spacing = 8,
+                Spacing = 10,
                 Width = 500,
-                Padding = new Thickness(14),
+                Padding = new Thickness(22, 20, 22, 22),
             };
 
             var titleBlock = new TextBlock
             {
                 Text = workspace.Name,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                FontSize = 15,
+                FontSize = 17,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
             var subtitleBlock = new TextBlock
             {
                 Text = $"{workspace.Applications.Count} item(s)",
                 FontSize = 11,
-                Opacity = 0.62,
-                Margin = new Thickness(0, 2, 0, 8),
+                Opacity = 0.58,
+                Margin = new Thickness(0, 2, 0, 10),
             };
             panel.Children.Add(titleBlock);
             panel.Children.Add(subtitleBlock);
@@ -102,9 +104,14 @@ namespace TopToolbar
                 Spacing = 6,
             };
 
-            foreach (var app in workspace.Applications.Where(app => app != null).OrderBy(app => app.ZOrder))
+            var isHotWorkspace = WorkspaceKinds.IsHot(workspace);
+            foreach (var app in workspace.Applications
+                .Where(app => app != null)
+                .OrderBy(app => app.Minimized)
+                .ThenBy(app => app.ZOrder)
+                .ThenBy(app => app.DisplayName, StringComparer.OrdinalIgnoreCase))
             {
-                list.Children.Add(CreateWorkspaceAppRow(workspace, app));
+                list.Children.Add(CreateWorkspaceAppRow(workspace, app, isHotWorkspace));
             }
 
             var scroller = new ScrollViewer
@@ -346,9 +353,11 @@ namespace TopToolbar
             }
         }
 
-        private FrameworkElement CreateWorkspaceAppRow(WorkspaceDefinition workspace, ApplicationDefinition app)
+        private FrameworkElement CreateWorkspaceAppRow(WorkspaceDefinition workspace, ApplicationDefinition app, bool isHotWorkspace)
         {
             var deleteButton = CreateDeleteButton();
+            var boundWindow = GetBoundWorkspaceWindow(app);
+            var isMissing = isHotWorkspace && !app.Minimized && boundWindow == IntPtr.Zero;
 
             var name = new TextBlock
             {
@@ -356,19 +365,22 @@ namespace TopToolbar
                 FontSize = 13,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = 360,
             };
             var subtitle = new TextBlock
             {
                 Text = BuildWorkspaceAppSubtitle(app),
                 FontSize = 11,
-                Opacity = 0.62,
+                Opacity = 0.58,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Margin = new Thickness(0, 2, 0, 0),
+                MaxWidth = 360,
             };
             var textStack = new StackPanel
             {
                 VerticalAlignment = VerticalAlignment.Center,
                 Spacing = 0,
+                Margin = new Thickness(12, 0, 8, 0),
             };
             textStack.Children.Add(name);
             textStack.Children.Add(subtitle);
@@ -378,23 +390,28 @@ namespace TopToolbar
                 Width = 32,
                 Height = 32,
                 VerticalAlignment = VerticalAlignment.Center,
-                Background = TryGetBrush("SystemControlHighlightListLowBrush", Color.FromArgb(0x36, 0x80, 0x80, 0x80)),
+                Background = new SolidColorBrush(isMissing
+                    ? Color.FromArgb(0x28, 0xD1, 0x34, 0x38)
+                    : Color.FromArgb(0x36, 0x80, 0x80, 0x80)),
+                CornerRadius = new CornerRadius(8),
             };
             iconHost.Children.Add(new FontIcon
             {
-                Glyph = app.Minimized ? "\uE921" : "\uE8A7",
+                Glyph = isMissing ? "\uE711" : app.Minimized ? "\uE921" : "\uE8A7",
                 FontSize = 15,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 Opacity = 0.78,
             });
+            ToolTipService.SetToolTip(iconHost, isMissing ? "Window missing" : app.Minimized ? "Minimized" : "Restored");
 
             var row = new Grid
             {
                 MinHeight = 52,
-                Padding = new Thickness(10, 8, 8, 8),
-                CornerRadius = new CornerRadius(12),
-                Background = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0)),
+                Padding = new Thickness(12, 9, 8, 9),
+                Margin = new Thickness(0, 1, 0, 1),
+                CornerRadius = new CornerRadius(14),
+                Background = new SolidColorBrush(isMissing ? Color.FromArgb(0x20, 0xD1, 0x34, 0x38) : Color.FromArgb(0, 0, 0, 0)),
             };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -414,13 +431,24 @@ namespace TopToolbar
                 }
 
                 _workspaceHoverAppId = app.Id ?? string.Empty;
-                row.Background = TryGetBrush("SystemControlHighlightListLowBrush", Color.FromArgb(0x28, 0xFF, 0xFF, 0xFF));
+                row.Background = new SolidColorBrush(isMissing
+                    ? Color.FromArgb(0x34, 0xD1, 0x34, 0x38)
+                    : Color.FromArgb(0x42, 0x7E, 0xA9, 0xE8));
+                iconHost.Background = new SolidColorBrush(isMissing
+                    ? Color.FromArgb(0x36, 0xD1, 0x34, 0x38)
+                    : Color.FromArgb(0x44, 0x2D, 0x7D, 0xFF));
                 deleteButton.Opacity = 1;
-                ShowWorkspaceItemOverlay(app);
+                if (!isMissing)
+                {
+                    ShowWorkspaceItemOverlay(app);
+                }
             };
             row.PointerExited += (_, _) =>
             {
-                row.Background = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0));
+                row.Background = new SolidColorBrush(isMissing ? Color.FromArgb(0x20, 0xD1, 0x34, 0x38) : Color.FromArgb(0, 0, 0, 0));
+                iconHost.Background = new SolidColorBrush(isMissing
+                    ? Color.FromArgb(0x28, 0xD1, 0x34, 0x38)
+                    : Color.FromArgb(0x36, 0x80, 0x80, 0x80));
                 deleteButton.Opacity = 0;
                 if (string.Equals(_workspaceHoverAppId, app.Id, StringComparison.OrdinalIgnoreCase))
                 {
@@ -438,8 +466,53 @@ namespace TopToolbar
                 e.Handled = true;
                 ShowWorkspaceAppContextMenu(row, workspace, app, e.GetPosition(row));
             };
+            row.Tapped += async (_, _) =>
+            {
+                if (!isMissing && isHotWorkspace)
+                {
+                    await RestoreWorkspaceAppWindowAsync(app).ConfigureAwait(true);
+                }
+            };
 
             return row;
+        }
+
+        private IntPtr GetBoundWorkspaceWindow(ApplicationDefinition app)
+        {
+            var hwnd = _workspaceHoverWindows.GetBoundWindow(app?.Id);
+            if (hwnd == IntPtr.Zero)
+            {
+                return IntPtr.Zero;
+            }
+
+            return NativeWindowHelper.TryCreateWindowInfo(hwnd, out _) ? hwnd : IntPtr.Zero;
+        }
+
+        private async System.Threading.Tasks.Task RestoreWorkspaceAppWindowAsync(ApplicationDefinition app)
+        {
+            var hwnd = GetBoundWorkspaceWindow(app);
+            if (hwnd == IntPtr.Zero)
+            {
+                _notificationService.ShowWarning("Window is no longer available.");
+                return;
+            }
+
+            var position = app?.Position;
+            if (position == null || position.IsEmpty)
+            {
+                _ = NativeWindowHelper.TryActivateWindow(hwnd);
+                return;
+            }
+
+            await NativeWindowHelper.SetWindowPlacementAsync(
+                    hwnd,
+                    new WindowPlacement(position.X, position.Y, position.Width, position.Height),
+                    maximize: app.Maximized,
+                    minimize: false,
+                    waitForInputIdle: false,
+                    cancellationToken: CancellationToken.None)
+                .ConfigureAwait(true);
+            _ = NativeWindowHelper.TryActivateWindow(hwnd);
         }
 
         private void ShowWorkspaceAppContextMenu(
@@ -501,24 +574,25 @@ namespace TopToolbar
 
         private static string BuildWorkspaceAppSubtitle(ApplicationDefinition app)
         {
+            var statePrefix = app.Minimized ? "Minimized · " : string.Empty;
             if (!string.IsNullOrWhiteSpace(app.RemoteProvider))
             {
-                return "Windows App connection";
+                return statePrefix + "Windows App connection";
             }
 
             if (!string.IsNullOrWhiteSpace(app.PackageFullName))
             {
-                return app.PackageFullName;
+                return statePrefix + app.PackageFullName;
             }
 
             if (!string.IsNullOrWhiteSpace(app.Path))
             {
-                return app.Path;
+                return statePrefix + app.Path;
             }
 
             if (!string.IsNullOrWhiteSpace(app.AppUserModelId))
             {
-                return app.AppUserModelId;
+                return statePrefix + app.AppUserModelId;
             }
 
             return app.Minimized ? "Minimized window" : "Window";
@@ -526,6 +600,12 @@ namespace TopToolbar
 
         private void ShowWorkspaceItemOverlay(ApplicationDefinition app)
         {
+            if (app?.Minimized == true)
+            {
+                HideWorkspaceItemOverlay();
+                return;
+            }
+
             var position = app?.Position;
             if (string.IsNullOrWhiteSpace(_workspaceHoverAppId))
             {
