@@ -59,6 +59,14 @@
   <ItemGroup>
     <Content Include="Assets\Icons\*.svg" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Everything SDK client DLLs (classic Everything_* API), one per architecture.
+         Copied to Native\Everything\ next to the app so EverythingSearchService can load
+         the matching DLL (e.g. EverythingARM64.dll on arm64). -->
+    <None Include="Native\Everything\*.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 
   <ItemGroup>
     <AppxManifest Include="Package.appxmanifest">
