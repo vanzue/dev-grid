@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using TopToolbar.Actions;
 using TopToolbar.Models;
+using TopToolbar.Providers;
 using Timer = System.Timers.Timer;
 using Path = System.IO.Path;
 
@@ -20,11 +21,13 @@ namespace TopToolbar
     {
         private static readonly string[] PreferredGroupProviderOrder =
         {
+            EverythingSearchProvider.ProviderId,
             "WorkspaceProvider",
         };
 
         private static readonly string[] PreferredDynamicGroupOrder =
         {
+            EverythingSearchProvider.GroupId,
             "workspaces",
         };
 
@@ -128,7 +131,8 @@ namespace TopToolbar
                 return false;
             }
 
-            return string.Equals(groupId, "workspaces", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(groupId, "workspaces", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(groupId, EverythingSearchProvider.GroupId, StringComparison.OrdinalIgnoreCase);
         }
 
         private static int GetProviderOrder(string providerId)

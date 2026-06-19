@@ -32,6 +32,7 @@ namespace TopToolbar.Providers
             // Clear any existing providers
             DisposeProviders();
 
+            LoadEverythingSearchProvider();
             LoadWorkspaceProvider();
             LoadScreenshotProvider();
             LoadSystemControlsProvider();
@@ -81,6 +82,25 @@ namespace TopToolbar.Providers
                 try
                 {
                     AppLogger.LogWarning($"BuiltinProvider: Failed to load workspace provider: {ex.Message}");
+                }
+                catch
+                {
+                    // Ignore logging errors
+                }
+            }
+        }
+
+        private void LoadEverythingSearchProvider()
+        {
+            try
+            {
+                _providers.Add(new EverythingSearchProvider());
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    AppLogger.LogWarning($"BuiltinProvider: Failed to load Everything search provider: {ex.Message}");
                 }
                 catch
                 {
