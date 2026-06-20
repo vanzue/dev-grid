@@ -45,6 +45,7 @@ namespace TopToolbar
         private Timer _configWatcherDebounce;
         private bool _isVisible;
         private bool _isContextMenuOpen;
+        private bool _isWorkspaceHoverOpen;
         private bool _requireCtrlForTopBarTrigger;
         private int _topBarTriggerWidth = 320;
         private bool _builtConfigOnce;

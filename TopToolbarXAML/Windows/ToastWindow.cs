@@ -59,6 +59,10 @@ namespace TopToolbar
         private bool? _isClickThrough;
         private bool _hasActionableToasts;
 
+        private readonly WorkspaceLaunchStatusService _launchStatus = WorkspaceLaunchStatusService.Instance;
+        private Microsoft.UI.Dispatching.DispatcherQueueTimer _launchStatusDismissTimer;
+        private static readonly TimeSpan LaunchStatusDismissDelay = TimeSpan.FromSeconds(2);
+
         private delegate IntPtr WndProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
         public ToastWindow(NotificationService notificationService)
@@ -91,6 +95,7 @@ namespace TopToolbar
 
             ConfigureAppWindowChrome();
             _notificationService.Items.CollectionChanged += OnNotificationCollectionChanged;
+            _launchStatus.Changed += OnLaunchStatusChanged;
 
             Activate();
             ConfigureAppWindowChrome();
@@ -255,6 +260,15 @@ namespace TopToolbar
 
             _disposed = true;
             _notificationService.Items.CollectionChanged -= OnNotificationCollectionChanged;
+            _launchStatus.Changed -= OnLaunchStatusChanged;
+            try
+            {
+                _launchStatusDismissTimer?.Stop();
+            }
+            catch
+            {
+            }
+
             UnhookNativeInputPassthrough();
             try
             {
@@ -857,6 +871,67 @@ namespace TopToolbar
             });
         }
 
+        private void OnLaunchStatusChanged(object sender, EventArgs e)
+        {
+            var dispatcher = DispatcherQueue;
+            if (dispatcher == null || dispatcher.HasThreadAccess)
+            {
+                ApplyLaunchStatusChange();
+                return;
+            }
+
+            _ = dispatcher.TryEnqueue(ApplyLaunchStatusChange);
+        }
+
+        private void ApplyLaunchStatusChange()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            RebuildToastVisuals();
+            UpdatePlacement();
+
+            if (_launchStatus.IsActive && _launchStatus.IsCompleted && _launchStatus.AllItemsTerminal())
+            {
+                StartLaunchStatusDismissTimer();
+            }
+            else
+            {
+                StopLaunchStatusDismissTimer();
+            }
+        }
+
+        private void StartLaunchStatusDismissTimer()
+        {
+            var dispatcher = DispatcherQueue;
+            if (dispatcher == null)
+            {
+                _launchStatus.Clear();
+                return;
+            }
+
+            // DispatcherQueueTimer (not Task.Delay) keeps the continuation on the UI thread.
+            _launchStatusDismissTimer ??= dispatcher.CreateTimer();
+            _launchStatusDismissTimer.Interval = LaunchStatusDismissDelay;
+            _launchStatusDismissTimer.IsRepeating = false;
+            _launchStatusDismissTimer.Tick -= OnLaunchStatusDismissTick;
+            _launchStatusDismissTimer.Tick += OnLaunchStatusDismissTick;
+            _launchStatusDismissTimer.Start();
+        }
+
+        private void StopLaunchStatusDismissTimer()
+        {
+            _launchStatusDismissTimer?.Stop();
+        }
+
+        private void OnLaunchStatusDismissTick(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object args)
+        {
+            sender.Stop();
+            _launchStatus.Clear();
+        }
+
         private Task RunOnUiThreadAsync(Action action)
         {
             if (action == null)
@@ -894,6 +969,11 @@ namespace TopToolbar
         private void RebuildToastVisuals()
         {
             _toastStack.Children.Clear();
+
+            if (_launchStatus.IsActive)
+            {
+                _toastStack.Children.Add(CreateLaunchStatusCard());
+            }
 
             foreach (var item in _notificationService.Items)
             {
@@ -1025,6 +1105,131 @@ namespace TopToolbar
             };
         }
 
+        private Border CreateLaunchStatusCard()
+        {
+            var title = _launchStatus.Title;
+            var items = _launchStatus.Snapshot();
+
+            var panel = new StackPanel { Spacing = 6 };
+
+            panel.Children.Add(new TextBlock
+            {
+                Text = string.IsNullOrWhiteSpace(title) ? "Launching workspace" : title,
+                Foreground = _toastLabel,
+                FontSize = 14,
+                FontFamily = _textFontFamily,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(0, 0, 0, 2),
+            });
+
+            foreach (var item in items)
+            {
+                if (item == null)
+                {
+                    continue;
+                }
+
+                panel.Children.Add(CreateLaunchStatusRow(item));
+            }
+
+            return new Border
+            {
+                Background = _toastBackground,
+                BorderBrush = _toastBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(14, 10, 14, 10),
+                MaxWidth = MaxToastWidthPx,
+                MinWidth = MinToastWidthPx,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Child = panel,
+            };
+        }
+
+        private FrameworkElement CreateLaunchStatusRow(WorkspaceLaunchStatusItem item)
+        {
+            var row = new Grid
+            {
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition { Width = GridLength.Auto },
+                    new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                    new ColumnDefinition { Width = GridLength.Auto },
+                },
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            FrameworkElement statusIcon;
+            switch (item.State)
+            {
+                case WorkspaceLaunchItemState.Failed:
+                    statusIcon = new FontIcon
+                    {
+                        Glyph = "\uEA39",
+                        FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                        FontSize = 14,
+                        Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xD1, 0x34, 0x38)),
+                    };
+                    break;
+                case WorkspaceLaunchItemState.Reused:
+                case WorkspaceLaunchItemState.Launched:
+                    statusIcon = new FontIcon
+                    {
+                        Glyph = "\uE73E",
+                        FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                        FontSize = 14,
+                        Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0x2E, 0xA0, 0x43)),
+                    };
+                    break;
+                default:
+                    statusIcon = new ProgressRing
+                    {
+                        IsActive = true,
+                        IsIndeterminate = true,
+                        Width = 14,
+                        Height = 14,
+                        Foreground = CloneBrush(_toastAccent) ?? new SolidColorBrush(Color.FromArgb(0xFF, 0x4F, 0x8A, 0xC9)),
+                    };
+                    break;
+            }
+
+            statusIcon.VerticalAlignment = VerticalAlignment.Center;
+            statusIcon.Margin = new Thickness(0, 0, 10, 0);
+            Grid.SetColumn(statusIcon, 0);
+            row.Children.Add(statusIcon);
+
+            var nameText = new TextBlock
+            {
+                Text = string.IsNullOrWhiteSpace(item.DisplayName) ? "App" : item.DisplayName,
+                Foreground = _toastLabel,
+                FontSize = 13,
+                FontFamily = _textFontFamily,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            Grid.SetColumn(nameText, 1);
+            row.Children.Add(nameText);
+
+            if (!string.IsNullOrWhiteSpace(item.Detail))
+            {
+                var detailText = new TextBlock
+                {
+                    Text = item.Detail,
+                    Foreground = _toastLabel,
+                    Opacity = 0.6,
+                    FontSize = 12,
+                    FontFamily = _textFontFamily,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(10, 0, 0, 0),
+                };
+                Grid.SetColumn(detailText, 2);
+                row.Children.Add(detailText);
+            }
+
+            return row;
+        }
+
         private Brush CreateAccentForKind(NotificationKind kind)
         {
             return kind switch
@@ -1141,7 +1346,8 @@ namespace TopToolbar
                 }
 
                 var hasNotifications = _notificationService.Items.Count > 0;
-                var shouldShow = hasNotifications && _activePromptCount == 0;
+                var hasLaunchStatus = _launchStatus.IsActive;
+                var shouldShow = (hasNotifications || hasLaunchStatus) && _activePromptCount == 0;
                 if (!shouldShow)
                 {
                     AppWindow.Hide();

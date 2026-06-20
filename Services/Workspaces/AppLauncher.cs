@@ -43,10 +43,26 @@ namespace TopToolbar.Services.Workspaces
                 return AppWindowResult.Failed;
             }
 
-            if (!string.IsNullOrWhiteSpace(app.LaunchUri))
+            // Prefer an explicit ms-avd: reconnect URI. Stale cold snapshots captured before
+            // the Windows App LaunchFiles cache existed have no launch-uri, so resolve it at
+            // launch time from the AUMID to reconnect the remote (Cloud PC) session.
+            var effectiveLaunchUri = app.LaunchUri;
+            if (string.IsNullOrWhiteSpace(effectiveLaunchUri)
+                && Windows365LaunchResolver.IsRemoteAumid(app.AppUserModelId))
+            {
+                var remote = Windows365LaunchResolver.Resolve(app.AppUserModelId, app.Title);
+                if (remote.Found)
+                {
+                    AppLogger.LogInfo($"WorkspaceRuntime: resolved Windows App remote launch URI at launch time for '{DescribeApp(app)}' (snapshot had no launch-uri).");
+                    effectiveLaunchUri = remote.LaunchUri;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(effectiveLaunchUri))
             {
                 return await LaunchUriAsync(
                     app,
+                    effectiveLaunchUri,
                     windowManager,
                     windowWaitTimeout,
                     windowPollInterval,
@@ -117,6 +133,7 @@ namespace TopToolbar.Services.Workspaces
 
         private static async Task<AppWindowResult> LaunchUriAsync(
             ApplicationDefinition app,
+            string launchUri,
             WindowManager windowManager,
             TimeSpan windowWaitTimeout,
             TimeSpan windowPollInterval,
@@ -124,7 +141,7 @@ namespace TopToolbar.Services.Workspaces
         {
             try
             {
-                var launchUri = app.LaunchUri?.Trim();
+                launchUri = launchUri?.Trim();
                 if (string.IsNullOrWhiteSpace(launchUri))
                 {
                     return AppWindowResult.Failed;
@@ -272,55 +289,84 @@ namespace TopToolbar.Services.Workspaces
             IReadOnlyCollection<IntPtr> knownHandles,
             CancellationToken cancellationToken)
         {
-            try
+            // IApplicationActivationManager.ActivateApplication only accepts packaged AUMIDs
+            // (PackageFamilyName!AppId). Legacy / shell-registered AppIds such as "MSEdge"
+            // (the Win32 Microsoft Edge) are not packaged AUMIDs and make ActivateApplication
+            // throw E_INVALIDARG ("Value does not fall within the expected range"). Launch those
+            // straight through shell:appsFolder instead of failing the activation call first.
+            if (IsPackagedAumid(app.AppUserModelId))
             {
-                var activationManager = (IApplicationActivationManager)new ApplicationActivationManager();
-                var hr = activationManager.ActivateApplication(
-                    app.AppUserModelId,
-                    string.IsNullOrWhiteSpace(app.CommandLineArguments) ? string.Empty : app.CommandLineArguments,
-                    ActivateOptions.None,
-                    out var processId);
-
-                if (hr < 0)
+                try
                 {
-                    Marshal.ThrowExceptionForHR(hr);
+                    // Run activation on a dedicated STA thread: IApplicationActivationManager
+                    // activates and foregrounds the target, and the launch pipeline otherwise
+                    // runs on MTA thread-pool threads (ConfigureAwait(false)).
+                    var hr = ActivateApplicationOnStaThread(
+                        app.AppUserModelId,
+                        string.IsNullOrWhiteSpace(app.CommandLineArguments) ? string.Empty : app.CommandLineArguments,
+                        out _);
+
+                    if (hr < 0)
+                    {
+                        Marshal.ThrowExceptionForHR(hr);
+                    }
+
+                    var windows = await WaitForAppWindowsAsync(
+                        app,
+                        windowManager,
+                        windowWaitTimeout,
+                        windowPollInterval,
+                        knownHandles,
+                        cancellationToken)
+                        .ConfigureAwait(false);
+
+                    return windows.Count > 0
+                        ? new AppWindowResult(true, true, windows)
+                        : AppWindowResult.Failed;
                 }
+                catch (COMException ex)
+                {
+                    AppLogger.LogWarning($"WorkspaceRuntime: ActivateApplication failed for '{DescribeApp(app)}' - 0x{ex.HResult:X8} {ex.Message}.");
+                    return await LaunchPackagedAppViaShellSimpleAsync(
+                        app,
+                        windowManager,
+                        windowWaitTimeout,
+                        windowPollInterval,
+                        knownHandles,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.LogWarning($"WorkspaceRuntime: Unexpected error launching '{DescribeApp(app)}' - {ex.Message}.");
+                    return await LaunchPackagedAppViaShellSimpleAsync(
+                        app,
+                        windowManager,
+                        windowWaitTimeout,
+                        windowPollInterval,
+                        knownHandles,
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
 
-                var windows = await WaitForAppWindowsAsync(
-                    app,
-                    windowManager,
-                    windowWaitTimeout,
-                    windowPollInterval,
-                    knownHandles,
-                    cancellationToken)
-                    .ConfigureAwait(false);
+            // Non-packaged AUMID (legacy shell AppId): activation API does not apply.
+            return await LaunchPackagedAppViaShellSimpleAsync(
+                app,
+                windowManager,
+                windowWaitTimeout,
+                windowPollInterval,
+                knownHandles,
+                cancellationToken).ConfigureAwait(false);
+        }
 
-                return windows.Count > 0 
-                    ? new AppWindowResult(true, true, windows) 
-                    : AppWindowResult.Failed;
-            }
-            catch (COMException ex)
+        private static bool IsPackagedAumid(string appUserModelId)
+        {
+            if (string.IsNullOrWhiteSpace(appUserModelId))
             {
-                AppLogger.LogWarning($"WorkspaceRuntime: ActivateApplication failed for '{DescribeApp(app)}' - 0x{ex.HResult:X8} {ex.Message}.");
-                return await LaunchPackagedAppViaShellSimpleAsync(
-                    app,
-                    windowManager,
-                    windowWaitTimeout,
-                    windowPollInterval,
-                    knownHandles,
-                    cancellationToken).ConfigureAwait(false);
+                return false;
             }
-            catch (Exception ex)
-            {
-                AppLogger.LogWarning($"WorkspaceRuntime: Unexpected error launching '{DescribeApp(app)}' - {ex.Message}.");
-                return await LaunchPackagedAppViaShellSimpleAsync(
-                    app,
-                    windowManager,
-                    windowWaitTimeout,
-                    windowPollInterval,
-                    knownHandles,
-                    cancellationToken).ConfigureAwait(false);
-            }
+
+            var bang = appUserModelId.IndexOf('!');
+            return bang > 0 && bang < appUserModelId.Length - 1;
         }
 
         private static async Task<AppWindowResult> LaunchPackagedAppViaShellSimpleAsync(
@@ -333,6 +379,16 @@ namespace TopToolbar.Services.Workspaces
         {
             try
             {
+                // Guard against opening a stray File Explorer window: explorer.exe
+                // shell:appsFolder\<aumid> only activates an app when the AUMID maps to a real
+                // AppListEntry. A packaged AUMID that does not resolve (e.g. a Windows365 remote
+                // sub-id "...!Windows365:<cloudPcId>") makes explorer open a plain folder window.
+                if (await ShouldSkipShellAppsFolderLaunchAsync(app.AppUserModelId, cancellationToken).ConfigureAwait(false))
+                {
+                    AppLogger.LogWarning($"WorkspaceRuntime: skipping shell:appsFolder launch for unresolved AUMID '{app.AppUserModelId}' ({DescribeApp(app)}) to avoid opening a stray Explorer window.");
+                    return AppWindowResult.Failed;
+                }
+
                 var startInfo = new ProcessStartInfo
                 {
                     FileName = "explorer.exe",
@@ -377,7 +433,7 @@ namespace TopToolbar.Services.Workspaces
             try
             {
                 var pm = new PackageManager();
-                var package = pm.FindPackageForUser(string.Empty, app.PackageFullName);
+                var package = ResolveInstalledPackage(pm, app);
                 if (package == null)
                 {
                     AppLogger.LogWarning($"WorkspaceRuntime: package '{app.PackageFullName}' not found for '{DescribeApp(app)}'.");
@@ -385,17 +441,20 @@ namespace TopToolbar.Services.Workspaces
                 }
 
                 var entries = await package.GetAppListEntriesAsync().AsTask(cancellationToken).ConfigureAwait(false);
-                var entry = entries.FirstOrDefault();
+                var entry = entries.FirstOrDefault(e =>
+                        !string.IsNullOrWhiteSpace(app.AppUserModelId)
+                        && string.Equals(e.AppUserModelId, app.AppUserModelId, StringComparison.OrdinalIgnoreCase))
+                    ?? entries.FirstOrDefault();
                 if (entry == null)
                 {
-                    AppLogger.LogWarning($"WorkspaceRuntime: no AppListEntry for package '{app.PackageFullName}' ({DescribeApp(app)}).");
+                    AppLogger.LogWarning($"WorkspaceRuntime: no AppListEntry for package '{package.Id.FullName}' ({DescribeApp(app)}).");
                     return AppWindowResult.Failed;
                 }
 
                 var launched = await entry.LaunchAsync().AsTask(cancellationToken).ConfigureAwait(false);
                 if (!launched)
                 {
-                    AppLogger.LogWarning($"WorkspaceRuntime: LaunchAsync returned false for package '{app.PackageFullName}' ({DescribeApp(app)}).");
+                    AppLogger.LogWarning($"WorkspaceRuntime: LaunchAsync returned false for package '{package.Id.FullName}' ({DescribeApp(app)}).");
                     return AppWindowResult.Failed;
                 }
 
@@ -421,6 +480,262 @@ namespace TopToolbar.Services.Workspaces
                 AppLogger.LogWarning($"WorkspaceRuntime: package launch failed for '{DescribeApp(app)}' ({app.PackageFullName}) - {ex.Message}");
                 return AppWindowResult.Failed;
             }
+        }
+
+        /// <summary>
+        /// Resolves the currently-installed package for an app. Tries the exact (version-pinned)
+        /// full name first, then falls back to the version-agnostic package family name so the
+        /// app still launches after it has auto-updated to a newer version.
+        /// </summary>
+        private static Windows.ApplicationModel.Package ResolveInstalledPackage(
+            PackageManager packageManager,
+            ApplicationDefinition app)
+        {
+            if (!string.IsNullOrWhiteSpace(app.PackageFullName))
+            {
+                try
+                {
+                    var exact = packageManager.FindPackageForUser(string.Empty, app.PackageFullName);
+                    if (exact != null)
+                    {
+                        return exact;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.LogWarning($"WorkspaceRuntime: FindPackageForUser failed for '{app.PackageFullName}' - {ex.Message}");
+                }
+            }
+
+            var familyName = GetPackageFamilyName(app);
+            if (string.IsNullOrWhiteSpace(familyName))
+            {
+                return null;
+            }
+
+            try
+            {
+                var candidates = packageManager.FindPackagesForUser(string.Empty, familyName)?.ToList();
+                if (candidates == null || candidates.Count == 0)
+                {
+                    return null;
+                }
+
+                AppLogger.LogInfo($"WorkspaceRuntime: resolved packaged app by family name '{familyName}' ({candidates.Count} candidate(s)); stored full name '{app.PackageFullName}' was not installed (version drift).");
+                return SelectBestPackage(candidates);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"WorkspaceRuntime: FindPackagesForUser failed for family '{familyName}' - {ex.Message}");
+                return null;
+            }
+        }
+
+        private static string GetPackageFamilyName(ApplicationDefinition app)
+        {
+            if (app == null)
+            {
+                return string.Empty;
+            }
+
+            var aumid = app.AppUserModelId;
+            if (!string.IsNullOrWhiteSpace(aumid))
+            {
+                var bang = aumid.IndexOf('!');
+                if (bang > 0)
+                {
+                    return aumid.Substring(0, bang);
+                }
+            }
+
+            return GetFamilyNameFromFullName(app.PackageFullName);
+        }
+
+        private static string GetFamilyNameFromFullName(string packageFullName)
+        {
+            if (string.IsNullOrWhiteSpace(packageFullName))
+            {
+                return string.Empty;
+            }
+
+            // Package full name format: Name_Version_Architecture_ResourceId_PublisherId.
+            // The family name is: Name_PublisherId.
+            var parts = packageFullName.Split('_');
+            if (parts.Length < 5)
+            {
+                return string.Empty;
+            }
+
+            return parts[0] + "_" + parts[^1];
+        }
+
+        private static Windows.ApplicationModel.Package SelectBestPackage(
+            List<Windows.ApplicationModel.Package> candidates)
+        {
+            if (candidates == null || candidates.Count == 0)
+            {
+                return null;
+            }
+
+            if (candidates.Count == 1)
+            {
+                return candidates[0];
+            }
+
+            var preferred = MapProcessArchitecture();
+            foreach (var package in candidates)
+            {
+                try
+                {
+                    if (package.Id.Architecture == preferred)
+                    {
+                        return package;
+                    }
+                }
+                catch
+                {
+                    // Ignore packages whose identity can't be read.
+                }
+            }
+
+            foreach (var package in candidates)
+            {
+                try
+                {
+                    if (package.Id.Architecture == Windows.System.ProcessorArchitecture.Neutral)
+                    {
+                        return package;
+                    }
+                }
+                catch
+                {
+                    // Ignore packages whose identity can't be read.
+                }
+            }
+
+            return candidates[0];
+        }
+
+        private static Windows.System.ProcessorArchitecture MapProcessArchitecture()
+        {
+            switch (RuntimeInformation.ProcessArchitecture)
+            {
+                case Architecture.Arm64:
+                    return Windows.System.ProcessorArchitecture.Arm64;
+                case Architecture.X64:
+                    return Windows.System.ProcessorArchitecture.X64;
+                case Architecture.X86:
+                    return Windows.System.ProcessorArchitecture.X86;
+                case Architecture.Arm:
+                    return Windows.System.ProcessorArchitecture.Arm;
+                default:
+                    return Windows.System.ProcessorArchitecture.Unknown;
+            }
+        }
+
+        /// <summary>
+        /// Runs <see cref="IApplicationActivationManager.ActivateApplication"/> on a dedicated STA
+        /// thread. The COM class is unavailable (REGDB_E_CLASSNOTREG) from the MTA thread-pool
+        /// threads the launch pipeline normally runs on.
+        /// </summary>
+        private static int ActivateApplicationOnStaThread(
+            string appUserModelId,
+            string arguments,
+            out uint processId)
+        {
+            var hr = 0;
+            uint pid = 0;
+            Exception threadException = null;
+
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    var activationManager = (IApplicationActivationManager)new ApplicationActivationManager();
+                    hr = activationManager.ActivateApplication(
+                        appUserModelId,
+                        arguments ?? string.Empty,
+                        ActivateOptions.None,
+                        out pid);
+                }
+                catch (Exception ex)
+                {
+                    threadException = ex;
+                }
+            });
+
+            thread.IsBackground = true;
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join();
+
+            if (threadException != null)
+            {
+                throw threadException;
+            }
+
+            processId = pid;
+            return hr;
+        }
+
+        private static async Task<bool> ShouldSkipShellAppsFolderLaunchAsync(
+            string appUserModelId,
+            CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(appUserModelId))
+            {
+                return true;
+            }
+
+            var bang = appUserModelId.IndexOf('!');
+            if (bang <= 0)
+            {
+                // Legacy / shell-registered AUMID (e.g. "MSEdge"); explorer resolves these.
+                return false;
+            }
+
+            return !await PackagedAumidResolvesAsync(appUserModelId, cancellationToken).ConfigureAwait(false);
+        }
+
+        private static async Task<bool> PackagedAumidResolvesAsync(
+            string appUserModelId,
+            CancellationToken cancellationToken)
+        {
+            var bang = appUserModelId.IndexOf('!');
+            if (bang <= 0)
+            {
+                return false;
+            }
+
+            var familyName = appUserModelId.Substring(0, bang);
+            try
+            {
+                var packageManager = new PackageManager();
+                var packages = packageManager.FindPackagesForUser(string.Empty, familyName);
+                if (packages == null)
+                {
+                    return false;
+                }
+
+                foreach (var package in packages)
+                {
+                    var entries = await package.GetAppListEntriesAsync().AsTask(cancellationToken).ConfigureAwait(false);
+                    foreach (var entry in entries)
+                    {
+                        if (string.Equals(entry.AppUserModelId, appUserModelId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.LogWarning($"WorkspaceRuntime: failed to validate AUMID '{appUserModelId}' - {ex.Message}");
+                return false;
+            }
+
+            return false;
         }
 
         private static async Task<AppWindowResult> LaunchWin32AppSimpleAsync(
@@ -1247,7 +1562,7 @@ namespace TopToolbar.Services.Workspaces
         }
 
         [ComImport]
-        [Guid("45BA127D-10A8-46EA-8AB7-56EA9078943C")]
+        [Guid("2E941141-7F97-4756-BA1D-9DECDE894A3D")]
         [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
         private interface IApplicationActivationManager
         {
@@ -1259,7 +1574,7 @@ namespace TopToolbar.Services.Workspaces
         }
 
         [ComImport]
-        [Guid("2E941141-7F97-4756-BA1D-9DECDE894A3D")]
+        [Guid("45BA127D-10A8-46EA-8AB7-56EA9078943C")]
         private class ApplicationActivationManager
         {
         }

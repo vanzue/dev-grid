@@ -72,6 +72,42 @@ namespace TopToolbar.Services.Windowing
             }
         }
 
+        /// <summary>
+        /// Describes a window for diagnostics regardless of whether it qualifies as a top-level
+        /// window (works for disabled/owned/cloaked windows too, unlike TryCreateWindowInfo).
+        /// </summary>
+        public static string DescribeWindowForDiagnostics(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero || !IsWindow(hwnd))
+            {
+                return $"handle={hwnd} (invalid/gone)";
+            }
+
+            try
+            {
+                GetWindowThreadProcessId(hwnd, out var processId);
+                var processName = string.Empty;
+                if (processId != 0)
+                {
+                    var path = TryGetProcessPath(processId);
+                    processName = string.IsNullOrWhiteSpace(path)
+                        ? string.Empty
+                        : System.IO.Path.GetFileNameWithoutExtension(path);
+                }
+
+                var className = GetWindowClassName(hwnd);
+                var title = GetWindowTitle(hwnd);
+                var style = GetWindowLongPtr(hwnd, GwlpStyle).ToInt64();
+                var disabled = (style & WsDisabled) == WsDisabled;
+                var visible = (style & WsVisible) == WsVisible;
+                return $"handle={hwnd}, pid={processId}, process='{processName}', class='{className}', title='{title}', visible={visible}, disabled={disabled}";
+            }
+            catch (Exception ex)
+            {
+                return $"handle={hwnd} (describe failed: {ex.Message})";
+            }
+        }
+
         public static IReadOnlyList<IntPtr> EnumerateTopLevelWindowsInZOrder()
         {
             var windows = new List<IntPtr>();

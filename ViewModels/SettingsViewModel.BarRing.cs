@@ -94,13 +94,8 @@ namespace TopToolbar.ViewModels
                 return;
             }
 
-            // Never let an action be removed from every surface (it would become unreachable).
-            if (!row.IsOnBar && !row.IsOnRing)
-            {
-                row.RevertSilently(isBar, true);
-                return;
-            }
-
+            // Settings is explicit configuration: allow removing an action from both surfaces
+            // (it simply won't appear on the bar or ring; re-check to bring it back).
             var existing = ActionPinStore.Instance.Get(row.Key) ?? row.BaseSurfaces;
             var preserved = existing & ~(ActionSurfaces.Bar | ActionSurfaces.Ring);
             var next = preserved

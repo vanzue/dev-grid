@@ -434,6 +434,8 @@ namespace TopToolbar.Services.Workspaces
                 return (false, string.Empty, IntPtr.Zero, "no live focusable windows");
             }
 
+            LogPerf($"WorkspaceRuntime: Focus - begin with {candidates.Count} candidate(s); {DescribeForegroundWindow()}");
+
             for (var i = 0; i < candidates.Count; i++)
             {
                 var candidate = candidates[i];
@@ -455,10 +457,29 @@ namespace TopToolbar.Services.Workspaces
                 }
 
                 LogPerf(
-                    $"WorkspaceRuntime: Focus - activation failed for role={candidate.Role}, handle={candidate.Handle}, app={candidate.AppLabel}");
+                    $"WorkspaceRuntime: Focus - activation failed for role={candidate.Role}, handle={candidate.Handle}, app={candidate.AppLabel}; blocked by {DescribeForegroundWindow()}");
             }
 
+            AppLogger.LogWarning(
+                $"WorkspaceRuntime: Focus - activation failed for all {candidates.Count} candidate(s); blocked by {DescribeForegroundWindow()}");
             return (false, string.Empty, IntPtr.Zero, "activation failed for all candidates");
+        }
+
+        private static string DescribeForegroundWindow()
+        {
+            try
+            {
+                if (!NativeWindowHelper.TryGetForegroundWindowHandle(out var foreground) || foreground == IntPtr.Zero)
+                {
+                    return "foreground=<none>";
+                }
+
+                return "foreground=" + NativeWindowHelper.DescribeWindowForDiagnostics(foreground);
+            }
+            catch
+            {
+                return "foreground=<error>";
+            }
         }
 
         private static IReadOnlyList<string> BuildFocusPriority(

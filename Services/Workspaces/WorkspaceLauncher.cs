@@ -165,6 +165,7 @@ namespace TopToolbar.Services.Workspaces
                     swTotal.Stop();
                     result.Ok = ok;
                     result.DurationMs = swTotal.ElapsedMilliseconds;
+                    WorkspaceLaunchStatusService.Instance.Complete();
                     LogSwitchSummary(result);
                     return result;
                 }
@@ -206,6 +207,10 @@ namespace TopToolbar.Services.Workspaces
                     AppLogger.LogWarning($"WorkspaceRuntime: workspace '{normalizedWorkspaceId}' has no applications to launch.");
                     return FinalizeResult(false);
                 }
+
+                WorkspaceLaunchStatusService.Instance.Begin(
+                    string.IsNullOrWhiteSpace(workspace.Name) ? "Workspace" : workspace.Name.Trim(),
+                    apps.Select(a => (a.Id, DescribeAppShort(a))));
 
                 var watchdogTimeout = ResolveLaunchWatchdogTimeout(appCount);
                 using var launchCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -257,29 +262,62 @@ namespace TopToolbar.Services.Workspaces
 
                     var assignResults = await Task.WhenAll(assignTasks).ConfigureAwait(false);
 
-                    var skippedMissingLaunches = 0;
+                    var unboundApps = new List<ApplicationDefinition>();
                     for (int i = 0; i < apps.Count; i++)
                     {
-                        var assignResult = assignResults[i];
-                        if (assignResult.Success)
+                        if (assignResults[i].Success)
                         {
-                            allResults.Add(assignResult);
+                            allResults.Add(assignResults[i]);
+                            WorkspaceLaunchStatusService.Instance.Update(
+                                apps[i].Id, WorkspaceLaunchItemState.Reused, "reused");
                         }
                         else
                         {
-                            if (allowLaunchMissingWindows)
-                            {
-                                appsNeedingLaunch.Add(apps[i]);
-                            }
-                            else
-                            {
-                                skippedMissingLaunches++;
-                                LogPerf($"WorkspaceRuntime: [{DescribeApp(apps[i])}] switch-only mode: no bound window found; launch skipped.");
-                            }
+                            unboundApps.Add(apps[i]);
                         }
                     }
 
-                    LogPerf($"WorkspaceRuntime: Phase 1 Pass 1 done - {allResults.Count} apps bound from registry, {appsNeedingLaunch.Count} need launch");
+                    // Pass 1b: Adopt already-existing matching windows (reuse instead of relaunch)
+                    // via global assignment. Runs even in switch-only mode since it never launches.
+                    if (unboundApps.Count > 0)
+                    {
+                        var adopted = AdoptExistingWindows(normalizedWorkspaceId, unboundApps, launchCancellationToken);
+                        if (adopted.Count > 0)
+                        {
+                            var adoptedIds = new HashSet<string>(
+                                adopted.Select(r => r.App?.Id ?? string.Empty),
+                                StringComparer.OrdinalIgnoreCase);
+                            allResults.AddRange(adopted);
+                            foreach (var r in adopted)
+                            {
+                                WorkspaceLaunchStatusService.Instance.Update(
+                                    r.App?.Id, WorkspaceLaunchItemState.Reused, "adopted");
+                            }
+                            unboundApps = unboundApps
+                                .Where(a => !adoptedIds.Contains(a?.Id ?? string.Empty))
+                                .ToList();
+                            LogPerf($"WorkspaceRuntime: Phase 1 Pass 1b - adopted {adopted.Count} existing window(s); {unboundApps.Count} still need launch");
+                        }
+                    }
+
+                    // Remaining unbound apps: launch new (or skip in switch-only mode).
+                    var skippedMissingLaunches = 0;
+                    foreach (var unboundApp in unboundApps)
+                    {
+                        if (allowLaunchMissingWindows)
+                        {
+                            appsNeedingLaunch.Add(unboundApp);
+                        }
+                        else
+                        {
+                            skippedMissingLaunches++;
+                            WorkspaceLaunchStatusService.Instance.Update(
+                                unboundApp?.Id, WorkspaceLaunchItemState.Failed, "not running");
+                            LogPerf($"WorkspaceRuntime: [{DescribeApp(unboundApp)}] switch-only mode: no bound window found; launch skipped.");
+                        }
+                    }
+
+                    LogPerf($"WorkspaceRuntime: Phase 1 Pass 1 done - {allResults.Count} apps bound (registry+adopt), {appsNeedingLaunch.Count} need launch");
                     if (!allowLaunchMissingWindows && skippedMissingLaunches > 0)
                     {
                         LogPerf($"WorkspaceRuntime: Phase 1 Pass 1 switch-only mode skipped launch for {skippedMissingLaunches} missing app(s).");
@@ -302,6 +340,8 @@ namespace TopToolbar.Services.Workspaces
                             ? (string.IsNullOrWhiteSpace(app?.Name) ? "app" : app.Name.Trim())
                             : app.Role.Trim();
                         ReportProgress($"Phase 3/4: Starting {appName} ({launchIndex}/{appsNeedingLaunch.Count})...");
+                        WorkspaceLaunchStatusService.Instance.Update(
+                            app?.Id, WorkspaceLaunchItemState.Launching, "launching");
                         launchCancellationToken.ThrowIfCancellationRequested();
                         var launchResult = await LaunchNewWindowAsync(
                             app,
@@ -309,6 +349,14 @@ namespace TopToolbar.Services.Workspaces
                             ShouldForceLaunchNewIfUnbound(workspace, app),
                             launchCancellationToken).ConfigureAwait(false);
                         allResults.Add(launchResult);
+                        WorkspaceLaunchStatusService.Instance.Update(
+                            app?.Id,
+                            launchResult.Success && launchResult.Handle != IntPtr.Zero
+                                ? WorkspaceLaunchItemState.Launched
+                                : WorkspaceLaunchItemState.Failed,
+                            launchResult.Success && launchResult.Handle != IntPtr.Zero
+                                ? "launched"
+                                : "launch failed");
                     }
                 }
 
@@ -339,6 +387,23 @@ namespace TopToolbar.Services.Workspaces
                         $"launch-incomplete: {successfulApps.Count}/{appCount} window(s) ready; missing={missingApps.Count} [{missingPreview}{missingSuffix}]");
                     AppLogger.LogWarning(
                         $"WorkspaceRuntime: workspace '{normalizedWorkspaceId}' has missing windows; continuing with {successfulApps.Count}/{appCount} ready.");
+
+                    // Mark any app that ended without a successful binding as failed in the flyout.
+                    foreach (var app in apps)
+                    {
+                        if (app == null)
+                        {
+                            continue;
+                        }
+
+                        var hasSuccess = allResults.Any(r =>
+                            r.Success && string.Equals(r.App?.Id, app.Id, StringComparison.OrdinalIgnoreCase));
+                        if (!hasSuccess)
+                        {
+                            WorkspaceLaunchStatusService.Instance.Update(
+                                app.Id, WorkspaceLaunchItemState.Failed, "no window");
+                        }
+                    }
                 }
 
                 // ============================================================
@@ -444,6 +509,7 @@ namespace TopToolbar.Services.Workspaces
                 }
                 catch (OperationCanceledException)
                 {
+                    WorkspaceLaunchStatusService.Instance.Complete();
                     throw;
                 }
                 catch (Exception ex)
@@ -469,6 +535,37 @@ namespace TopToolbar.Services.Workspaces
             }
 
             return false;
+        }
+
+        private static string DescribeAppShort(ApplicationDefinition app)
+        {
+            if (app == null)
+            {
+                return "App";
+            }
+
+            if (!string.IsNullOrWhiteSpace(app.Role))
+            {
+                return app.Role.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(app.Name))
+            {
+                var name = app.Name.Trim();
+                if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    name = name.Substring(0, name.Length - 4);
+                }
+
+                return name;
+            }
+
+            if (!string.IsNullOrWhiteSpace(app.Title))
+            {
+                return app.Title.Trim();
+            }
+
+            return "App";
         }
 
         private static TimeSpan ResolveLaunchWatchdogTimeout(int appCount)

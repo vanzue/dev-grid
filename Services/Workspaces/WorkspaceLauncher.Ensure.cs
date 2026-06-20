@@ -67,8 +67,35 @@ namespace TopToolbar.Services.Workspaces
                     // Verify the window still exists AND matches the app (process must match)
                     if (!NativeWindowHelper.TryCreateWindowInfo(boundHandle, out var windowInfo))
                     {
-                        _managedWindows.UnbindWindow(boundHandle);
-                        LogPerf($"WorkspaceRuntime: [{appLabel}] TryAssignExisting - cached window handle={boundHandle} missing, cleared");
+                        // TryCreateWindowInfo rejects WS_DISABLED/owned windows. A bound window that
+                        // is still alive but temporarily not describable (e.g. an msrdc/RDP session
+                        // mid-connect or showing a modal) must NOT be dropped, or we would relaunch a
+                        // duplicate. Keep the binding when the handle is still a live window.
+                        if (NativeWindowHelper.IsWindowHandleValid(boundHandle))
+                        {
+                            if (!EnsureWindowOnCurrentDesktop(
+                                boundHandle,
+                                appLabel,
+                                "TryAssignExisting-cached-undescribable",
+                                allowUnknownDesktopState: true))
+                            {
+                                _managedWindows.UnbindApp(app.Id);
+                                LogPerf($"WorkspaceRuntime: [{appLabel}] TryAssignExisting - cached window handle={boundHandle} unavailable on current desktop, unbound");
+                            }
+                            else
+                            {
+                                sw.Stop();
+                                LogPerf(
+                                    $"WorkspaceRuntime: [{appLabel}] TryAssignExisting - kept live-but-undescribable cached window " +
+                                    $"handle={boundHandle} (likely disabled/RDP) in {sw.ElapsedMilliseconds} ms");
+                                return new EnsureAppResult(true, app, boundHandle, false);
+                            }
+                        }
+                        else
+                        {
+                            _managedWindows.UnbindWindow(boundHandle);
+                            LogPerf($"WorkspaceRuntime: [{appLabel}] TryAssignExisting - cached window handle={boundHandle} missing, cleared");
+                        }
                     }
                     else
                     {
@@ -454,6 +481,169 @@ namespace TopToolbar.Services.Workspaces
             {
                 return string.Equals(pathOrName.Trim().Trim('"'), expectedExe, StringComparison.OrdinalIgnoreCase);
             }
+        }
+
+        /// <summary>
+        /// Phase 1 Pass 1b: Adopt already-existing windows for apps that have no registry-bound
+        /// window, using a GLOBAL assignment so each app claims its best-matching window without
+        /// stealing another app's window. This is what lets an already-running single-instance app
+        /// (or a shared-package app such as Windows 365 / msrdc) be reused instead of relaunched.
+        /// </summary>
+        private System.Collections.Generic.List<EnsureAppResult> AdoptExistingWindows(
+            string workspaceId,
+            System.Collections.Generic.IReadOnlyList<ApplicationDefinition> apps,
+            CancellationToken cancellationToken)
+        {
+            var results = new System.Collections.Generic.List<EnsureAppResult>();
+            if (apps == null || apps.Count == 0)
+            {
+                return results;
+            }
+
+            var snapshot = _windowManager.GetSnapshot();
+            if (snapshot == null || snapshot.Count == 0)
+            {
+                return results;
+            }
+
+            // Eligible candidate windows: on the current virtual desktop and not already bound to
+            // any app. allowCloaked=true so a minimized window can still be adopted; off-desktop
+            // windows are filtered out via IsWindowOnCurrentDesktop.
+            var candidates = new System.Collections.Generic.List<WindowInfo>();
+            for (var i = 0; i < snapshot.Count; i++)
+            {
+                var window = snapshot[i];
+                if (window == null || window.Handle == IntPtr.Zero)
+                {
+                    continue;
+                }
+
+                if (!IsEligibleLaunchWindow(window, allowCloaked: true))
+                {
+                    continue;
+                }
+
+                if (_managedWindows.GetBoundAppId(window.Handle) != null)
+                {
+                    continue;
+                }
+
+                if (!IsWindowOnCurrentDesktop(window.Handle))
+                {
+                    continue;
+                }
+
+                candidates.Add(window);
+            }
+
+            if (candidates.Count == 0)
+            {
+                return results;
+            }
+
+            // Build all positive-score (app, window) pairs.
+            var pairs = new System.Collections.Generic.List<AdoptPair>();
+            for (var ai = 0; ai < apps.Count; ai++)
+            {
+                var app = apps[ai];
+                if (app == null)
+                {
+                    continue;
+                }
+
+                for (var wi = 0; wi < candidates.Count; wi++)
+                {
+                    var window = candidates[wi];
+                    var score = WorkspaceWindowMatcher.GetMatchScore(window, app);
+                    if (score <= 0)
+                    {
+                        continue;
+                    }
+
+                    pairs.Add(new AdoptPair(ai, window, score, GetWindowArea(window.Bounds)));
+                }
+            }
+
+            if (pairs.Count == 0)
+            {
+                return results;
+            }
+
+            // Global assignment: process pairs by descending match strength so the strongest
+            // identity signal (e.g. remote-resource 1100) wins before weaker shared-package
+            // matches (900). Deterministic tiebreak by area then handle keeps results stable.
+            pairs.Sort(static (x, y) =>
+            {
+                var c = y.Score.CompareTo(x.Score);
+                if (c != 0)
+                {
+                    return c;
+                }
+
+                c = y.Area.CompareTo(x.Area);
+                if (c != 0)
+                {
+                    return c;
+                }
+
+                return x.Window.Handle.ToInt64().CompareTo(y.Window.Handle.ToInt64());
+            });
+
+            var assignedApps = new System.Collections.Generic.HashSet<int>();
+            var assignedWindows = new System.Collections.Generic.HashSet<IntPtr>();
+            for (var p = 0; p < pairs.Count; p++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var pair = pairs[p];
+                if (assignedApps.Contains(pair.AppIndex) || assignedWindows.Contains(pair.Window.Handle))
+                {
+                    continue;
+                }
+
+                var app = apps[pair.AppIndex];
+                var appLabel = DescribeApp(app);
+
+                if (!EnsureWindowOnCurrentDesktop(
+                    pair.Window.Handle,
+                    appLabel,
+                    "Adopt",
+                    allowUnknownDesktopState: false))
+                {
+                    continue;
+                }
+
+                if (_managedWindows.TryBindWindow(workspaceId, app.Id, pair.Window.Handle))
+                {
+                    assignedApps.Add(pair.AppIndex);
+                    assignedWindows.Add(pair.Window.Handle);
+                    LogPerf(
+                        $"WorkspaceRuntime: [{appLabel}] Adopt - reused existing window " +
+                        $"handle={pair.Window.Handle} score={pair.Score} title='{pair.Window.Title}'");
+                    results.Add(new EnsureAppResult(true, app, pair.Window.Handle, false));
+                }
+            }
+
+            return results;
+        }
+
+        private readonly struct AdoptPair
+        {
+            public AdoptPair(int appIndex, WindowInfo window, int score, long area)
+            {
+                AppIndex = appIndex;
+                Window = window;
+                Score = score;
+                Area = area;
+            }
+
+            public int AppIndex { get; }
+
+            public WindowInfo Window { get; }
+
+            public int Score { get; }
+
+            public long Area { get; }
         }
 
         private bool HasMatchingCurrentDesktopWindowForApp(ApplicationDefinition app)

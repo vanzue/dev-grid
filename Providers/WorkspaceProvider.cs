@@ -845,6 +845,10 @@ namespace TopToolbar.Providers
 
             var errors = diagnostics.Errors?
                 .Where(message => !string.IsNullOrWhiteSpace(message))
+                // Focus is best-effort and does not fail the launch (e.g. a disabled RDP window
+                // can transiently hold the foreground and block SetForegroundWindow). Keep it in
+                // logs/diagnostics but never surface it as a user-facing warning on an OK launch.
+                .Where(message => !message.TrimStart().StartsWith("focus-failed", StringComparison.OrdinalIgnoreCase))
                 .ToList() ?? new List<string>();
             var warnings = diagnostics.Warnings?
                 .Where(message => !string.IsNullOrWhiteSpace(message))

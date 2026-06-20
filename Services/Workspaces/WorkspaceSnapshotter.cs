@@ -5,7 +5,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using TopToolbar.Logging;
@@ -607,126 +606,26 @@ namespace TopToolbar.Services.Workspaces
 
         private static WindowsAppRemoteIdentity TryResolveWindowsAppRemoteIdentity(WindowInfo window)
         {
-            if (window == null || string.IsNullOrWhiteSpace(window.AppUserModelId))
+            if (window == null)
             {
                 return default;
             }
 
-            const string appIdMarker = "!Windows365:";
-            var markerIndex = window.AppUserModelId.IndexOf(appIdMarker, StringComparison.OrdinalIgnoreCase);
-            if (markerIndex < 0)
+            var identity = Windows365LaunchResolver.Resolve(window.AppUserModelId, window.Title);
+            if (!identity.Found)
             {
                 return default;
             }
 
-            var cloudPcId = window.AppUserModelId.Substring(markerIndex + appIdMarker.Length).Trim();
-            if (string.IsNullOrWhiteSpace(cloudPcId) || cloudPcId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-            {
-                return default;
-            }
-
-            var launchFilesDirectory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Packages",
-                "MicrosoftCorporationII.Windows365_8wekyb3d8bbwe",
-                "LocalCache",
-                "LaunchFiles");
-            var settingsPath = Path.Combine(launchFilesDirectory, cloudPcId + ".json");
-            var rdpPath = Path.Combine(launchFilesDirectory, cloudPcId + ".rdp");
-
-            var settings = ReadWindowsAppLaunchSettings(settingsPath);
-            var resourceId = ReadWindowsAppResourceId(rdpPath);
-            if (string.IsNullOrWhiteSpace(settings.UserName) || string.IsNullOrWhiteSpace(resourceId))
-            {
-                return default;
-            }
-
-            AppLogger.LogInfo($"WorkspaceSnapshot: captured Windows App launch URI for '{window.Title}' resourceId='{resourceId}'.");
-            var launchUri = "ms-avd:connect?resourceid="
-                + Uri.EscapeDataString(resourceId)
-                + "&username="
-                + Uri.EscapeDataString(settings.UserName);
-            var displayName = string.IsNullOrWhiteSpace(settings.DisplayName)
-                ? window.Title ?? string.Empty
-                : settings.DisplayName;
+            AppLogger.LogInfo($"WorkspaceSnapshot: captured Windows App launch URI for '{window.Title}' resourceId='{identity.ResourceId}'.");
             return new WindowsAppRemoteIdentity(
-                "windows-app",
-                cloudPcId,
-                resourceId,
-                settings.UserName,
-                launchUri,
-                displayName);
+                identity.Provider,
+                identity.ConnectionId,
+                identity.ResourceId,
+                identity.UserName,
+                identity.LaunchUri,
+                identity.DisplayName);
         }
-
-        private static WindowsAppLaunchSettings ReadWindowsAppLaunchSettings(string settingsPath)
-        {
-            if (string.IsNullOrWhiteSpace(settingsPath) || !File.Exists(settingsPath))
-            {
-                return default;
-            }
-
-            try
-            {
-                using var document = JsonDocument.Parse(File.ReadAllText(settingsPath));
-                var username = string.Empty;
-                var displayName = string.Empty;
-                if (document.RootElement.TryGetProperty("UserName", out var userElement)
-                    && userElement.ValueKind == JsonValueKind.String)
-                {
-                    username = userElement.GetString()?.Trim() ?? string.Empty;
-                }
-
-                if (document.RootElement.TryGetProperty("WorkspaceDisplayName", out var displayNameElement)
-                    && displayNameElement.ValueKind == JsonValueKind.String)
-                {
-                    displayName = displayNameElement.GetString()?.Trim() ?? string.Empty;
-                }
-
-                return new WindowsAppLaunchSettings(username, displayName);
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogWarning($"WorkspaceSnapshot: failed to read Windows App launch settings '{settingsPath}' - {ex.Message}");
-            }
-
-            return default;
-        }
-
-        private static string ReadWindowsAppResourceId(string rdpPath)
-        {
-            if (string.IsNullOrWhiteSpace(rdpPath) || !File.Exists(rdpPath))
-            {
-                return string.Empty;
-            }
-
-            try
-            {
-                foreach (var line in File.ReadLines(rdpPath))
-                {
-                    const string prefix = "remoteapplicationprogram:s:||";
-                    if (!line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    var resourceId = line.Substring(prefix.Length).Trim();
-                    if (!string.IsNullOrWhiteSpace(resourceId))
-                    {
-                        return resourceId;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                AppLogger.LogWarning($"WorkspaceSnapshot: failed to read Windows App RDP launch file '{rdpPath}' - {ex.Message}");
-            }
-
-            return string.Empty;
-        }
-
-        private readonly record struct WindowsAppLaunchSettings(
-            string UserName,
-            string DisplayName);
 
         private readonly record struct WindowsAppRemoteIdentity(
             string Provider,

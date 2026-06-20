@@ -161,7 +161,7 @@ namespace TopToolbar
             };
             _workspaceHoverWindow.Closed += (_, _) =>
             {
-                _isContextMenuOpen = false;
+                _isWorkspaceHoverOpen = false;
                 _workspaceHoverWorkspaceId = string.Empty;
                 _workspaceHoverAppId = string.Empty;
                 HideWorkspaceItemOverlay();
@@ -171,7 +171,7 @@ namespace TopToolbar
 
             _workspaceHoverWindow.Activate();
             ConfigureWorkspaceHoverWindow(target);
-            _isContextMenuOpen = true;
+            _isWorkspaceHoverOpen = true;
         }
 
         private void ConfigureWorkspaceHoverWindow(FrameworkElement target)
@@ -357,7 +357,11 @@ namespace TopToolbar
         {
             var deleteButton = CreateDeleteButton();
             var boundWindow = GetBoundWorkspaceWindow(app);
-            var isMissing = isHotWorkspace && !app.Minimized && boundWindow == IntPtr.Zero;
+            // Missing = the bound window no longer exists. This is independent of the recipe's
+            // Minimized flag: a minimized app whose window was closed must still read as missing
+            // (GetBoundWorkspaceWindow already returns Zero when the window is gone, and a live
+            // minimized window keeps WS_VISIBLE so it resolves to a non-zero handle).
+            var isMissing = isHotWorkspace && boundWindow == IntPtr.Zero;
 
             var name = new TextBlock
             {
@@ -369,7 +373,7 @@ namespace TopToolbar
             };
             var subtitle = new TextBlock
             {
-                Text = BuildWorkspaceAppSubtitle(app),
+                Text = BuildWorkspaceAppSubtitle(app, isMissing),
                 FontSize = 11,
                 Opacity = 0.58,
                 TextTrimming = TextTrimming.CharacterEllipsis,
@@ -485,7 +489,11 @@ namespace TopToolbar
                 return IntPtr.Zero;
             }
 
-            return NativeWindowHelper.TryCreateWindowInfo(hwnd, out _) ? hwnd : IntPtr.Zero;
+            // Use a real liveness check (IsWindow) rather than TryCreateWindowInfo: a bound window
+            // that is alive but temporarily WS_DISABLED (e.g. an msrdc/RDP session mid-connect or
+            // showing a modal) is NOT missing. TryCreateWindowInfo rejects disabled/owned windows
+            // and would false-flag a live remote window as "Missing".
+            return NativeWindowHelper.IsWindowHandleValid(hwnd) ? hwnd : IntPtr.Zero;
         }
 
         private async System.Threading.Tasks.Task RestoreWorkspaceAppWindowAsync(ApplicationDefinition app)
@@ -572,9 +580,11 @@ namespace TopToolbar
             return button;
         }
 
-        private static string BuildWorkspaceAppSubtitle(ApplicationDefinition app)
+        private static string BuildWorkspaceAppSubtitle(ApplicationDefinition app, bool isMissing)
         {
-            var statePrefix = app.Minimized ? "Minimized · " : string.Empty;
+            var statePrefix = isMissing
+                ? "Missing · "
+                : app.Minimized ? "Minimized · " : string.Empty;
             if (!string.IsNullOrWhiteSpace(app.RemoteProvider))
             {
                 return statePrefix + "Windows App connection";
