@@ -36,6 +36,10 @@ namespace TopToolbar.ViewModels
 
         public ObservableCollection<ToolbarButtonItem> Buttons { get; }
 
+        // Ring placement is independent of the bar: the radial reads these (bar-filtered Buttons would
+        // hide ring-only actions). Kept in sync with the source on every rebuild / surface change.
+        public ObservableCollection<ToolbarButtonItem> RingButtons { get; } = new();
+
         public bool IsVisible
         {
             get => _isVisible;
@@ -136,6 +140,13 @@ namespace TopToolbar.ViewModels
             }
 
             Buttons.Clear();
+
+            foreach (var item in RingButtons)
+            {
+                item.Dispose();
+            }
+
+            RingButtons.Clear();
         }
 
         private void RebuildButtons()
@@ -173,12 +184,41 @@ namespace TopToolbar.ViewModels
                 }
             }
 
+            RebuildRingButtons();
             OnButtonsChanged();
         }
 
         private static bool IsBarVisible(ToolbarButton button)
         {
             return button != null && button.IsEnabled && (button.Surfaces & ActionSurfaces.Bar) != 0;
+        }
+
+        private static bool IsRingVisible(ToolbarButton button)
+        {
+            return button != null && button.IsEnabled && (button.Surfaces & ActionSurfaces.Ring) != 0;
+        }
+
+        private void RebuildRingButtons()
+        {
+            foreach (var item in RingButtons)
+            {
+                item.Dispose();
+            }
+
+            RingButtons.Clear();
+
+            if (_buttonsSource == null)
+            {
+                return;
+            }
+
+            foreach (var button in _buttonsSource)
+            {
+                if (IsRingVisible(button))
+                {
+                    RingButtons.Add(new ToolbarButtonItem(_group, button));
+                }
+            }
         }
 
         private void OnButtonsCollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
@@ -296,6 +336,7 @@ namespace TopToolbar.ViewModels
                         RemoveButton(button);
                     }
 
+                    RebuildRingButtons();
                     UpdateVisibility();
                     OnButtonsChanged();
                 }

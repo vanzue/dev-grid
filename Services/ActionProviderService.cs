@@ -64,5 +64,10 @@ namespace TopToolbar.Services
         {
             return _runtime.TryGetProvider(providerId, out provider);
         }
+
+        public void RaiseProviderChanged(string providerId, ProviderChangeKind kind)
+        {
+            _runtime.RaiseProviderChanged(providerId, kind);
+        }
     }
 }

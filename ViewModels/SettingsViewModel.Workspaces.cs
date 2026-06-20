@@ -50,6 +50,10 @@ namespace TopToolbar.ViewModels
                         {
                             IsHotCornersSelected = false;
                         }
+                        if (IsBarRingSelected)
+                        {
+                            IsBarRingSelected = false;
+                        }
                         if (SelectedGroup != null)
                         {
                             SelectedGroup = null;

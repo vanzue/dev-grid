@@ -384,6 +384,35 @@
                         </Grid>
                     </ListViewItem>
 
+                    <!-- Fixed Bar & Ring item -->
+                    <ListViewItem Grid.Row="3"
+                                  x:Name="BarRingItem"
+                                  IsSelected="{x:Bind ViewModel.IsBarRingSelected, Mode=OneWay}"
+                                  Tapped="OnBarRingItemTapped"
+                                  Style="{StaticResource ToolbarListItemStyle}"
+                                  Padding="4,6">
+                        <Grid ColumnSpacing="10" Padding="6,2,4,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Width="28"
+                                    Height="28"
+                                    CornerRadius="8"
+                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                                <FontIcon FontFamily="Segoe MDL2 Assets"
+                                         Glyph="&#xE700;"
+                                         FontSize="14"
+                                         VerticalAlignment="Center"
+                                         HorizontalAlignment="Center"/>
+                            </Border>
+                            <TextBlock Grid.Column="1"
+                                       Text="Bar &amp; Ring"
+                                       FontWeight="Normal"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+                    </ListViewItem>
+
                     <!-- Groups header with add/remove -->
                     <Grid Grid.Row="3"
                           Margin="0,8,0,2"
@@ -750,6 +779,86 @@
                                 </ComboBox>
                             </tkcontrols:SettingsCard>
 
+                        </StackPanel>
+
+                        <!-- Bar & Ring settings (only when Bar & Ring is selected) -->
+                        <StackPanel Spacing="18" Visibility="{x:Bind ViewModel.IsBarRingSelected, Mode=OneWay}">
+                            <Grid ColumnSpacing="16" Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Width="48"
+                                        Height="48"
+                                        CornerRadius="14"
+                                        Background="{StaticResource SettingsAccentGradientBrush}"
+                                        VerticalAlignment="Top">
+                                    <FontIcon FontFamily="Segoe MDL2 Assets"
+                                              Glyph="&#xE700;"
+                                              Foreground="White"
+                                              FontSize="21"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="5" VerticalAlignment="Center">
+                                    <TextBlock Text="Bar &amp; Ring"
+                                               Style="{StaticResource SettingsPageTitleStyle}"/>
+                                    <TextBlock Text="Choose which actions appear on the top bar and the radial ring. Each action must stay on at least one."
+                                               Style="{StaticResource SettingsPageSubtitleStyle}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <Border Background="{ThemeResource LayerOnAcrylicFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    Padding="2,2">
+                                <StackPanel>
+                                    <Grid Padding="16,10,16,10" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="64"/>
+                                            <ColumnDefinition Width="64"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Action" Opacity="0.6" FontSize="12"/>
+                                        <TextBlock Grid.Column="1" Text="Bar" Opacity="0.6" FontSize="12" HorizontalAlignment="Center"/>
+                                        <TextBlock Grid.Column="2" Text="Ring" Opacity="0.6" FontSize="12" HorizontalAlignment="Center"/>
+                                    </Grid>
+                                    <ItemsControl ItemsSource="{x:Bind ViewModel.ActionSurfaceRows, Mode=OneWay}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ActionSurfaceRow">
+                                                <Grid Padding="16,6,16,6" ColumnSpacing="8" MinHeight="44">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="64"/>
+                                                        <ColumnDefinition Width="64"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <FontIcon Grid.Column="0"
+                                                              FontFamily="Segoe MDL2 Assets"
+                                                              Glyph="{x:Bind Glyph}"
+                                                              FontSize="15"
+                                                              Opacity="0.8"
+                                                              VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="{x:Bind Label}"
+                                                               VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               Margin="10,0,0,0"/>
+                                                    <CheckBox Grid.Column="2"
+                                                              IsChecked="{x:Bind IsOnBar, Mode=TwoWay}"
+                                                              MinWidth="0"
+                                                              HorizontalAlignment="Center"/>
+                                                    <CheckBox Grid.Column="3"
+                                                              IsChecked="{x:Bind IsOnRing, Mode=TwoWay}"
+                                                              MinWidth="0"
+                                                              HorizontalAlignment="Center"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
 
                         <!-- Hot Corners settings (only when Hot Corners is selected) -->

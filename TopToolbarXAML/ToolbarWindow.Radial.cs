@@ -525,7 +525,7 @@ namespace TopToolbar
             var entries = new List<RadialEntry>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var group in ItemsViewModel.VisibleGroups)
+            foreach (var group in ItemsViewModel.AllGroups)
             {
                 var labelPrefix = IsWorkspaceGroup(group)
                     ? "Workspace"
@@ -579,7 +579,7 @@ namespace TopToolbar
 
             bool isWorkspace = IsWorkspaceGroup(group);
 
-            foreach (var button in group.Buttons)
+            foreach (var button in group.RingButtons)
             {
                 if (button?.Button == null || !button.IsEnabled)
                 {

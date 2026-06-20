@@ -83,6 +83,23 @@ namespace TopToolbar.Providers
             return _providers.TryGetValue(providerId, out provider);
         }
 
+        /// <summary>
+        /// Raises <see cref="ProvidersChanged"/> for an externally-driven change (e.g. a bar/ring pin
+        /// toggled in Settings) so listeners can rebuild the affected provider output and re-apply pins.
+        /// </summary>
+        public void RaiseProviderChanged(string providerId, ProviderChangeKind kind)
+        {
+            try
+            {
+                var version = System.Threading.Interlocked.Increment(ref _changeVersion);
+                var args = new ProviderChangedEventArgs(providerId ?? string.Empty, kind) { Version = version };
+                ProvidersChanged?.Invoke(this, args);
+            }
+            catch
+            {
+            }
+        }
+
         public async Task<ProviderInfo> GetInfoAsync(string providerId, CancellationToken cancellationToken)
         {
             if (!_providers.TryGetValue(providerId, out var provider))

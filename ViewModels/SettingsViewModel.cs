@@ -45,6 +45,7 @@ namespace TopToolbar.ViewModels
             var workspaceConfig = await _workspaceConfigStore.LoadAsync();
             var workspaceDefinitions = await _workspaceDefinitionStore.LoadAllAsync(CancellationToken.None);
             var hotCornerActionOptions = await BuildHotCornerActionOptionsAsync(CancellationToken.None).ConfigureAwait(false);
+            var actionSurfaceRows = await BuildActionSurfaceRowsAsync(CancellationToken.None).ConfigureAwait(false);
 
             void Apply()
             {
@@ -61,6 +62,7 @@ namespace TopToolbar.ViewModels
                     MediaPlayPauseEnabled = toolbarConfig.DefaultActions.MediaPlayPause.Enabled;
                     ReplaceHotCornerActionOptions(hotCornerActionOptions);
                     LoadHotCorners(toolbarConfig.HotCorners);
+                    ReplaceActionSurfaceRows(actionSurfaceRows);
 
                     Groups.Clear();
                     foreach (var g in toolbarConfig.Groups)
@@ -80,7 +82,7 @@ namespace TopToolbar.ViewModels
                         _suppressWorkspaceSave = false;
                     }
 
-                    if (!IsGeneralSelected && !IsHotCornersSelected && SelectedGroup == null && SelectedWorkspace == null)
+                    if (!IsGeneralSelected && !IsHotCornersSelected && !IsBarRingSelected && SelectedGroup == null && SelectedWorkspace == null)
                     {
                         IsGeneralSelected = true;
                     }

@@ -36,6 +36,22 @@ namespace TopToolbar.ViewModels
 
         public ObservableCollection<ToolbarGroupViewModel> VisibleGroups { get; }
 
+        /// <summary>All group view-models in store order, regardless of bar visibility. The radial ring
+        /// uses this so ring-only actions (whose group may not be shown on the bar) are still reachable.</summary>
+        public IEnumerable<ToolbarGroupViewModel> AllGroups
+        {
+            get
+            {
+                foreach (var group in _store.Groups)
+                {
+                    if (group?.Id != null && _groupMap.TryGetValue(group.Id, out var vm))
+                    {
+                        yield return vm;
+                    }
+                }
+            }
+        }
+
         public bool ShowSettingsSeparator
         {
             get => _showSettingsSeparator;

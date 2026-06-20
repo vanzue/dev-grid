@@ -80,6 +80,13 @@ namespace TopToolbar
             WorkspacesList.SelectedItem = null;
         }
 
+        private void OnBarRingItemTapped(object sender, TappedRoutedEventArgs e)
+        {
+            _vm.IsBarRingSelected = true;
+            GroupsList.SelectedItem = null;
+            WorkspacesList.SelectedItem = null;
+        }
+
         // Rename handlers for groups list
         private async void OnStartRenameGroup(object sender, RoutedEventArgs e)
         {
